@@ -1,99 +1,93 @@
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE OverloadedLists   #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE UnicodeSyntax     #-}
-{-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE UnicodeSyntax #-}
+module Brian
+  ( main
+  ) where
 
 import Base1
 
-import Debug.Trace    ( trace, traceShow )
-import Prelude  ( Enum, error, undefined )
+import Prelude ( Enum, error )
 
 -- base --------------------------------
 
-import qualified  Data.List.NonEmpty  as  NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 
-import Control.Monad       ( (=<<), foldM_ )
-import Data.List           ( drop, filter, maximum, reverse, takeWhile, zip )
-import Data.List.NonEmpty  ( nonEmpty )
-import Data.Maybe          ( catMaybes )
-import GHC.Exts            ( IsList( fromList, toList ), IsString( fromString ) )
-import System.Environment  ( getArgs )
-import System.IO           ( putStrLn )
-import Text.Read           ( Read( readPrec ), readEither )
+import Control.Monad      ( foldM_, (=<<) )
+import Data.List          ( drop, filter, maximum, reverse, takeWhile, zip )
+import Data.List.NonEmpty ( nonEmpty )
+import Data.Maybe         ( catMaybes )
+import GHC.Exts           ( IsList(toList), IsString(fromString) )
+import System.Environment ( getArgs )
+import System.IO          ( putStrLn )
+import Text.Read          ( Read(readPrec), readEither )
 
 -- containers --------------------------
 
-import qualified  Data.Map.Strict  as  Map
-import qualified  Data.Set         as  Set
+import Data.Map.Strict qualified as Map
+import Data.Set        qualified as Set
 
 -- fpath -------------------------------
 
-import FPath.File       ( File )
-import FPath.Parseable  ( parse' )
+import FPath.File      ( File )
+import FPath.Parseable ( parse' )
 
 -- lens --------------------------------
 
-import Control.Lens.Getter   ( view )
-import Control.Lens.Indexed  ( itoList )
+import Control.Lens.Getter  ( view )
+import Control.Lens.Indexed ( itoList )
 
 -- monaderror-plus ---------------------
 
-import MonadError.IO.Error  ( IOError )
+import MonadError.IO.Error ( IOError )
 
 -- monadio-plus ------------------------
 
-import MonadIO.OpenFile  ( readFileUTF8Lenient )
+import MonadIO.OpenFile ( readFileUTF8Lenient )
 
 -- more-unicode ------------------------
 
-import Data.MoreUnicode.Lens  ( (⊩) )
+import Data.MoreUnicode.Lens ( (⊩) )
 
 -- neat-interpolation ------------------
 
-import NeatInterpolation  ( trimming )
+import NeatInterpolation ( trimming )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple            ( Connection, FromRow
-                                         , NamedParam ( (:=) ), Only( Only )
-                                         , Query, SQLData, ToRow ( toRow )
-                                         , execute_, executeNamed, open
-                                         , query_, queryNamed, withTransaction
-                                         )
-import Database.SQLite.Simple.FromField  ( FromField( fromField ) )
-import Database.SQLite.Simple.Ok         ( Ok( Errors, Ok ) )
-import Database.SQLite.Simple.ToField    ( ToField( toField ) )
+import Database.SQLite.Simple           ( Connection, FromRow, NamedParam((:=)),
+                                          Only(Only), Query, SQLData,
+                                          ToRow(toRow), executeNamed, execute_,
+                                          open, queryNamed, query_,
+                                          withTransaction )
+import Database.SQLite.Simple.FromField ( FromField(fromField) )
+import Database.SQLite.Simple.Ok        ( Ok(Errors, Ok) )
+import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- tagsoup -----------------------------
 
-import Text.HTML.TagSoup  ( Tag, (~/=), (~==)
-                          , innerText, parseTags, partitions )
+import Text.HTML.TagSoup ( Tag, innerText, parseTags, partitions, (~/=), (~==) )
 
 -- text --------------------------------
 
-import Data.Text  ( breakOn, intercalate, pack, splitOn, stripPrefix, unpack
-                  , unwords, words )
+import Data.Text ( breakOn, intercalate, pack, splitOn, stripPrefix, unpack,
+                   unwords, words )
 
 -- text-printer ------------------------
 
-import qualified Text.Printer  as  P
+import Text.Printer qualified as P
 
 -- word-wrap ---------------------------
 
-import Text.Wrap  ( FillStrategy( FillIndent ), WrapSettings( fillStrategy )
-                  , defaultWrapSettings, wrapText )
+import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
+                   defaultWrapSettings, wrapText )
 
 -- HTTP --------------------------------
 
-import Network.HTTP  ( getResponseBody, postRequestWithBody, simpleHTTP )
+import Network.HTTP ( getResponseBody, postRequestWithBody, simpleHTTP )
 
 --------------------------------------------------------------------------------
 
-newtype ID = ID { unID ∷ ℕ }
-  deriving (Enum,Eq,Ord,Show)
+newtype ID = ID { unID :: ℕ }
+  deriving (Enum, Eq, Ord, Show)
 
 instance Read ID where
   readPrec = ID ⊳ readPrec
@@ -107,7 +101,7 @@ fromℤ = ID ∘ fromIntegral
 instance ToField ID where
   toField = toField ∘ toℤ
 
-openURL' :: String → String -> IO String
+openURL' ∷ String → String → IO String
 openURL' x t = let content_type = "application/x-www-form-urlencoded"
                    postRequest  = postRequestWithBody x content_type t
                in  getResponseBody =<< simpleHTTP postRequest
@@ -125,8 +119,7 @@ brian = openURL' "http://brianspage.com/query.php" "description=gag"
 text ∷ [Tag 𝕋] → 𝕋
 text = unwords ∘ words ∘ innerText
 
-data Medium = SoapOpera | TVSeries
-  deriving Show
+data Medium = SoapOpera | TVSeries deriving (Show)
 
 instance Printable Medium where
   print SoapOpera = P.text "Soap Opera"
@@ -137,14 +130,14 @@ parseMedium "Soap Opera" = SoapOpera
 parseMedium "TV Series"  = TVSeries
 parseMedium t            = error $ [fmt|Unparsed medium: '%t'|] t
 
-data Entry = Entry { _recordNumber ∷ ID
-                   , _title        ∷ 𝕄 𝕋
-                   , _medium       ∷ 𝕄 Medium
-                   , _actresses    ∷ [𝕋]
-                   , _tags         ∷ [BTag]
-                   , _description  ∷ [𝕋]
+data Entry = Entry { _recordNumber :: ID
+                   , _title        :: 𝕄 𝕋
+                   , _medium       :: 𝕄 Medium
+                   , _actresses    :: [𝕋]
+                   , _tags         :: [BTag]
+                   , _description  :: [𝕋]
                    }
- deriving Show
+  deriving (Show)
 
 -- instance ToField ID where
 --   toField = toField ∘ fromIntegral @_ @ℤ ∘ unID
@@ -214,7 +207,7 @@ parseEntry ts =
     𝕵 ("Record number", n) →
       case readEither (drop 2 $ unpack n) of
         𝕷 err → error $ show (err, drop 2 (unpack n))
-        𝕽 n' → addEntryFields (mkEntry n') (entryParagraphs ts)
+        𝕽 n'  → addEntryFields (mkEntry n') (entryParagraphs ts)
     _ → error $ "no record number!\n" ⊕ show ts
 
 printEntry ∷ Entry → IO ()
@@ -238,13 +231,13 @@ makeTable conn = do
             |]
   execute_ conn sql
 
-newtype Table  = Table  { unTable  ∷ 𝕋 }
-  deriving (IsString,Show)
+newtype Table = Table { unTable :: 𝕋 }
+  deriving newtype (IsString, Show)
 
 instance Printable Table where print = P.text ∘ unTable
 
-newtype Column = Column { unColumn ∷ 𝕋 }
-  deriving (IsString,Eq,Ord,Show)
+newtype Column = Column { unColumn :: 𝕋 }
+  deriving newtype (Eq, IsString, Ord, Show)
 
 instance Printable Column where print = P.text ∘ unColumn
 
@@ -255,19 +248,19 @@ infix 5 ~
 (~) ∷ ToField τ ⇒ Column → τ → (Column,SQLData)
 a ~ b = (a, toField b)
 
-newtype EntryData = EntryData { unEntryData ∷ Map.Map Column SQLData }
-  deriving Show
+newtype EntryData = EntryData { unEntryData :: Map.Map Column SQLData }
+  deriving (Show)
 
 instance IsList EntryData where
   type instance Item EntryData = (Column, SQLData)
   fromList = EntryData ∘ fromList
   toList = Map.toList ∘ unEntryData
 
-data Insert = Insert { _iTable     ∷ Table
-                     , _iEntryData ∷ NonEmpty EntryData
-                     , _iExtra     ∷ 𝕄 𝕋
+data Insert = Insert { _iTable     :: Table
+                     , _iEntryData :: NonEmpty EntryData
+                     , _iExtra     :: 𝕄 𝕋
                      }
-  deriving Show
+  deriving (Show)
 
 iTable ∷ Lens' Insert Table
 iTable = lens _iTable (\ i t → i { _iTable = t })
@@ -292,7 +285,8 @@ iQuery i = fromString $
 
 iData ∷ Insert → [[NamedParam]]
 iData =
-  fmap (\ (k,v) → (columnID k := v)) ∘ itoList ∘ unEntryData ⩺ Base1.toList ∘ view iEntryData
+  fmap (\ (k,v) → (columnID k := v)) ∘ itoList ∘ unEntryData
+                                     ⩺ Base1.toList ∘ view iEntryData
 
 insertSimple ∷ Connection → Insert → IO ()
 insertSimple conn i = forM_ (iData i) $ executeNamed conn (iQuery i)
@@ -301,35 +295,13 @@ insertSimple' ∷ FromRow r ⇒ Connection → Insert → IO [[r]]
 insertSimple' conn i = forM (iData i) $ queryNamed conn (iQuery i)
 
 entryData ∷ Entry → Map.Map Column SQLData
-entryData e = {- Map.fromList -} [ "id"          ~ e ⊣ recordNumber
-                           , "title"       ~ e ⊣ title
-                           , "medium"      ~ e ⊣ medium
-                           , "actresses"   ~ intercalate "\v" (e ⊣ actresses)
-                           , "description" ~ intercalate "\v" (reverse $ e ⊣ description)
-                           , "tags"        ~ (""∷𝕋) -- intercalate "\v" (e ⊣ tags)
-                           ]
-
-entryInserts ∷ TagsTable → Entry → ([Insert], TagsTable)
-entryInserts tgs e =
-  let tgs_max = maximum $ ID 0 : Map.elems tgs
-      tg_new = Set.difference (fromList $ e ⊣ tags) (bTags tgs)
-      tg_insert ∷ [(BTag,ID)]
-      tg_insert = zip (Base1.toList tg_new) (drop 1 [tgs_max..])
-
-      ((x,y):_) = tg_insert
-
-      mk_tag_row (b,i) = {- Map.fromList -} ["id" ~ i, "tag" ~ b]
-
-      tg_inserts = case nonEmpty tg_insert of
-        𝕹         → []
-        𝕵 ys@((b,i):|xs) →
-          let entry_data = (mk_tag_row ⊳ ys)
-          in  [ Insert "Tags" (EntryData ⊳ entry_data) 𝕹 ]
-      inserts = tg_inserts
-              ⊕ [ Insert "Records" (pure $ EntryData $ entryData e)
-                         (𝕵 "ON CONFLICT (id) DO NOTHING RETURNING (id)")
-                ]
-  in    traceShow ("tg_insert", tg_insert) $ (inserts, Map.union tgs (fromList tg_insert))
+entryData e =  [ "id"          ~ e ⊣ recordNumber
+               , "title"       ~ e ⊣ title
+               , "medium"      ~ e ⊣ medium
+               , "actresses"   ~ intercalate "\v" (e ⊣ actresses)
+               , "description" ~ intercalate "\v" (reverse $ e ⊣ description)
+               , "tags"        ~ (""∷𝕋)
+               ]
 
 tagsInsert ∷ TagsTable → Entry → ([Insert], TagsTable)
 tagsInsert tgs e =
@@ -338,18 +310,14 @@ tagsInsert tgs e =
       tg_insert ∷ [(BTag,ID)]
       tg_insert = zip (Base1.toList tg_new) (drop 1 [tgs_max..])
 
-      ((x,y):_) = tg_insert
-
-      mk_tag_row (b,i) = {- Map.fromList -} ["id" ~ i, "tag" ~ b]
+      mk_tag_row (b,i) = ["id" ~ i, "tag" ~ b]
 
       tg_inserts = case nonEmpty tg_insert of
-        𝕹         → []
-        𝕵 ys@((b,i):|xs) →
+        𝕹    → []
+        𝕵 ys →
           let entry_data = (mk_tag_row ⊳ ys)
           in  [ Insert "Tags" (EntryData ⊳ entry_data) 𝕹 ]
-      inserts = tg_inserts
-  in  traceShow ("tg_insert", tg_insert) $ (tg_inserts, Map.union tgs (fromList tg_insert))
-
+  in  (tg_inserts, Map.union tgs (fromList tg_insert))
 
 entryInsert ∷ Entry → Insert
 entryInsert e =
@@ -384,20 +352,16 @@ insertEntry conn tgs e = withTransaction conn $ do
 insertTags ∷ Connection → TagsTable → Entry → ID → IO TagsTable
 insertTags conn tgs e rid = do
   let (ins, tgs') = tagsInsert tgs e
-  -- the [𝔹] is arbitrary, there is no FromRow ()
-  forM ins $ insertSimple conn
-  forM (e ⊣ tags) $ \ t → putStrLn . show $ (Map.lookup t tgs')
---  let tg_ids = Map.lookup t tgs'
+  forM_ ins $ insertSimple conn
   case nonEmpty (e ⊣ tags) of
     𝕹 → return ()
     𝕵 tg_ids' → do
-      let ins = Insert "TagRef" ((\ t → ["recordid" ~ rid, "tagid" ~ Map.lookup t tgs']) ⊳ tg_ids') 𝕹
-      putStrLn $ show ins
-      insertSimple conn ins
+      let mkref t = ["recordid" ~ rid, "tagid" ~ Map.lookup t tgs']
+      insertSimple conn $ Insert "TagRef" (mkref ⊳ tg_ids') 𝕹
   return tgs'
 
-newtype BTag = BTag  { unBTag ∷ 𝕋 }
-  deriving (Eq,Ord,Show)
+newtype BTag = BTag { unBTag :: 𝕋 }
+  deriving (Eq, Ord, Show)
 
 instance Printable BTag where
   print = P.text ∘ unBTag
@@ -407,12 +371,12 @@ instance ToField BTag where
 
 instance FromField BTag where
   fromField f = case fromField f of
-    Ok t → Ok $ BTag t
+    Ok t     → Ok $ BTag t
     Errors x → Errors x
 
 instance FromField ID where
   fromField f = case fromField @ℤ f of
-    Ok n → Ok $ fromℤ n
+    Ok n     → Ok $ fromℤ n
     Errors x → Errors x
 
 getTagsTable ∷ Connection → IO TagsTable
