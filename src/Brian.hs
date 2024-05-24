@@ -5,7 +5,7 @@ module Brian
 
 import Base1
 
-import Prelude ( Enum, error )
+import Prelude ( Enum, error, undefined )
 
 -- base --------------------------------
 
@@ -14,7 +14,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Control.Monad      ( foldM_, (=<<) )
 import Data.List          ( drop, filter, maximum, reverse, takeWhile, zip )
 import Data.List.NonEmpty ( nonEmpty )
-import Data.Maybe         ( catMaybes )
+import Data.Maybe         ( catMaybes, fromJust )
 import GHC.Exts           ( IsList(toList), IsString(fromString) )
 import System.Environment ( getArgs )
 import System.IO          ( putStrLn )
@@ -30,10 +30,27 @@ import Data.Set        qualified as Set
 import FPath.File      ( File )
 import FPath.Parseable ( parse' )
 
+-- HTTP --------------------------------
+
+import Network.HTTP ( getResponseBody, postRequestWithBody, simpleHTTP )
+
 -- lens --------------------------------
 
 import Control.Lens.Getter  ( view )
 import Control.Lens.Indexed ( itoList )
+import Control.Lens.Setter  ( (<>~) )
+
+-- logs-plus ---------------------------
+
+import Log ( Log )
+
+-- logging-effect ----------------------
+
+import Control.Monad.Log ( LoggingT )
+
+-- mockio-log --------------------------
+
+import MockIO.Log ( MockIOClass )
 
 -- monaderror-plus ---------------------
 
@@ -46,6 +63,10 @@ import MonadIO.OpenFile ( readFileUTF8Lenient )
 -- more-unicode ------------------------
 
 import Data.MoreUnicode.Lens ( (⊩) )
+
+-- natural -----------------------------
+
+import Natural ( One )
 
 -- neat-interpolation ------------------
 
@@ -62,6 +83,17 @@ import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.Ok        ( Ok(Errors, Ok) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
+-- parsers -----------------------------
+
+import Text.Parser.Char        ( string )
+import Text.Parser.Combinators ( choice )
+
+-- stdmain --------------------------------
+
+import StdMain            ( LogTIO, stdMain'' )
+import StdMain.StdOptions ( DryRunLevel )
+import StdMain.UsageError ( UsageFPIOTPError )
+
 -- tagsoup -----------------------------
 
 import Text.HTML.TagSoup ( Tag, innerText, parseTags, partitions, (~/=), (~==) )
@@ -75,14 +107,23 @@ import Data.Text ( breakOn, intercalate, pack, splitOn, stripPrefix, unpack,
 
 import Text.Printer qualified as P
 
+-- textual-plus ------------------------
+
+import TextualPlus                         ( TextualPlus(textual'), parseString,
+                                             parseText, tparse )
+import TextualPlus.Error.TextualParseError ( AsTextualParseError )
+
 -- word-wrap ---------------------------
 
 import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
                    defaultWrapSettings, wrapText )
 
--- HTTP --------------------------------
+------------------------------------------------------------
+--                     local imports                      --
+------------------------------------------------------------
 
-import Network.HTTP ( getResponseBody, postRequestWithBody, simpleHTTP )
+import Brian.Data ( BTag )
+
 
 --------------------------------------------------------------------------------
 
@@ -106,8 +147,8 @@ openURL' x t = let content_type = "application/x-www-form-urlencoded"
                    postRequest  = postRequestWithBody x content_type t
                in  getResponseBody =<< simpleHTTP postRequest
 
-brian ∷ IO String
-brian = openURL' "http://brianspage.com/query.php" "description=gag"
+brian ∷ MonadIO μ ⇒ μ String
+brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
 
 
 (≈) ∷ Tag 𝕋 → 𝕊 → 𝔹
@@ -125,10 +166,17 @@ instance Printable Medium where
   print SoapOpera = P.text "Soap Opera"
   print TVSeries  = P.text "TV Series"
 
+instance TextualPlus Medium where
+  textual' = -- choice [ string "Soap Opera" ⋫ pure SoapOpera
+                     {- , -}string "TV Series" ⋫ pure TVSeries
+                    -- ]
+
+{-
 parseMedium ∷ 𝕋 → Medium
 parseMedium "Soap Opera" = SoapOpera
 parseMedium "TV Series"  = TVSeries
 parseMedium t            = error $ [fmt|Unparsed medium: '%t'|] t
+-}
 
 data Entry = Entry { _recordNumber :: ID
                    , _title        :: 𝕄 𝕋
@@ -139,11 +187,8 @@ data Entry = Entry { _recordNumber :: ID
                    }
   deriving (Show)
 
--- instance ToField ID where
---   toField = toField ∘ fromIntegral @_ @ℤ ∘ unID
-
 instance ToRow Entry where
-  toRow e = toRow ({- fromIntegral @_ @ℤ $ -} e ⊣ recordNumber, e ⊣ title)
+  toRow e = toRow (e ⊣ recordNumber, e ⊣ title)
 
 recordNumber ∷ Lens' Entry ID
 recordNumber = lens _recordNumber (\ e n → e { _recordNumber = n })
@@ -184,24 +229,27 @@ mkEntry ∷ ID → Entry
 mkEntry n = Entry { _recordNumber = n, _title = 𝕹, _medium = 𝕹
                   , _actresses = [], _description = [], _tags = [] }
 
-addEntryField ∷ Entry → 𝕋 → Entry
+parseBTags ∷ (MonadError ε η, AsTextualParseError ε) ⇒ 𝕋 → η [BTag]
+parseBTags = sequence ∘ fmap tparse ∘ splitOn ", "
+
+addEntryField ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
 addEntryField e t =
   case second (stripPrefix ": ") $ (breakOn ":") t of
-    ("Title"      , 𝕵 t') → e & title ⊩ t' -- e { title = 𝕵 t' }
-    ("Medium"     , 𝕵 t') → e & medium ⊩ parseMedium t'
-    ("Actress"    , 𝕵 t') → e & actresses ⊧ (⊕ (splitOn ", " t'))
-    ("Tags"       , 𝕵 t') → e & tags ⊧ (⊕ (BTag ⊳ splitOn ", " t'))
-    ("Description", 𝕵 t') → e & description ⊧ (t' :)
-    (_            , _   ) → e & description ⊧ (t :)
+    ("Tags"       , 𝕵 t') → parseBTags t' ≫ return ∘ (e &) ∘ (tags <>~)
+    ("Title"      , 𝕵 t') → return $ e & title       ⊩ t'
+    ("Medium"     , 𝕵 t') → tparse t' ≫ return ∘ (e &) . (medium ⊩)
+    ("Actress"    , 𝕵 t') → return $ e & actresses <>~ (splitOn ", " t')
+    ("Description", 𝕵 t') → return $ e & description ⊧ (t' :)
+    (_            , _   ) → return $ e & description ⊧ (t :)
 
-addEntryFields ∷ Entry → [𝕋] → Entry
-addEntryFields e ts = foldl addEntryField e ts
+addEntryFields ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → [𝕋] → η Entry
+addEntryFields e ts = foldM addEntryField e ts
 
 entryParagraphs ∷ [Tag 𝕋] → [𝕋]
 entryParagraphs p = filter (≢ "") $ text ⊳⊳ partitions (≈ "br")
                                  $ takeWhile (≉ "/blockquote") p
 
-parseEntry ∷ [Tag 𝕋] → Entry
+parseEntry ∷ (MonadError ε η, AsTextualParseError ε) ⇒ [Tag 𝕋] → η Entry
 parseEntry ts =
   case breakOn ": " ⊳ (text ∘ pure ⊳ ts !! 1) of
     𝕵 ("Record number", n) →
@@ -329,23 +377,12 @@ type TagsTable = Map.Map BTag ID
 bTags ∷ TagsTable → Set.Set BTag
 bTags = fromList ∘ Map.keys
 
-insertEntry ∷ Connection → TagsTable → Entry → IO TagsTable
-insertEntry conn tgs e = withTransaction conn $ do
-  -- CR mpearce handle tags
-
---   simpleInsert conn (Table "Records") (entryData e)
---                     (𝕵 "ON CONFLICT (id) DO NOTHING RETURNING (id)")
-
-
---  let (inserts,tgs') = entryInserts tgs e
---  forM_ inserts $ insertSimple conn
---  return tgs'
+insertEntry ∷ MonadIO μ ⇒ Connection → TagsTable → Entry → μ TagsTable
+insertEntry conn tgs e = liftIO ∘ withTransaction conn $ do
   let insert = entryInsert e
---  [[Only (n :: ID)]] ← insertSimple conn insert
   insertSimple' conn insert ≫ \ case
     [[Only (n :: ID)]] → do
       putStrLn $ show n
-      -- insert tags
       insertTags conn tgs e n
     _ → return tgs
 
@@ -360,37 +397,34 @@ insertTags conn tgs e rid = do
       insertSimple conn $ Insert "TagRef" (mkref ⊳ tg_ids') 𝕹
   return tgs'
 
-newtype BTag = BTag { unBTag :: 𝕋 }
-  deriving (Eq, Ord, Show)
-
-instance Printable BTag where
-  print = P.text ∘ unBTag
-
-instance ToField BTag where
-  toField = toField ∘ unBTag
-
-instance FromField BTag where
-  fromField f = case fromField f of
-    Ok t     → Ok $ BTag t
-    Errors x → Errors x
-
 instance FromField ID where
   fromField f = case fromField @ℤ f of
     Ok n     → Ok $ fromℤ n
     Errors x → Errors x
 
-getTagsTable ∷ Connection → IO TagsTable
-getTagsTable conn = do
+getTagsTable ∷ MonadIO μ ⇒ Connection → μ TagsTable
+getTagsTable conn = liftIO $ do
   let sql = "SELECT tag,id FROM Tags"
   rows ← query_ conn sql
   return $ Map.fromList rows
 
-main ∷ IO ()
-main = do
-  args ← getArgs
+parseEntries ∷ (AsTextualParseError ε, MonadError ε η) ⇒ [Tag 𝕋] → η [Entry]
+parseEntries ts = mapM parseEntry (partitions (≈ "blockquote") ts)
+
+buildTables ∷ AsTextualParseError ε ⇒
+              Connection → [Tag 𝕋] → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
+buildTables conn ts = do
+  tags_table ← getTagsTable conn
+  parseEntries ts ≫ foldM_ (insertEntry conn) tags_table
+
+doMain ∷ AsTextualParseError ε ⇒
+         DryRunLevel One → () → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
+doMain dry_run _ = do
+  -- get these from the options
+  args ← liftIO $ getArgs
   (t ∷ 𝕋, conn) ← case args of
     [f,db] → case (parse' @File f, parse' @File db) of
-               (𝕽 f', 𝕽 db') → do
+               (𝕽 f', 𝕽 db') → liftIO $ do
                  conn ← open (toString db')
                  makeTable conn
 
@@ -405,19 +439,10 @@ main = do
   let ts ∷ [Tag 𝕋] = parseTags t
 
   case conn of
-    𝕹 → forM_ (partitions (≈ "blockquote") ts) (printEntry ∘ parseEntry)
-    𝕵 conn' → do
-      tags_table ← getTagsTable conn'
-      putStrLn $ show tags_table
+--    𝕹 → forM_ (partitions (≈ "blockquote") ts) (printEntry ∘ parseEntry)
+    𝕵 conn' → buildTables conn' ts
 
-      foldM_ (insertEntry conn') tags_table
-             (parseEntry ⊳ partitions (≈ "blockquote") ts)
-
--- create table tags ( id INTEGER PRIMARY KEY, tag TEXT UNIQUE )
--- insert into tags (tag) VALUES ('tag1'),('tag2'),('tag4'),('tag3') ON CONFLICT (tag) DO NOTHING"
--- create table tagref ( recordid INTEGER, tagid INTEGER, FOREIGN KEY( recordid ) REFERENCES Records(id), FOREIGN KEY (tagid) REFERENCES Tags(Id))
--- SELECT id FROM Tags WHERE tag IN ('tag2','tag3')
--- "insert into Records (id, title) VALUES (5,'eez'), (9,'westh'),(7,'oeua')ON CONFLICT(id) DO NOTHING RETURNING (id)"
--- "INSERT INTO TagRef SELECT 1 AS recordid,id AS tagid from tags where tag in ('tag2','tag3')"
+main ∷ IO ()
+main = stdMain'' "manipulate a brianDB" (pure ()) (doMain @UsageFPIOTPError)
 
 -- that's all, folks! ----------------------------------------------------------
