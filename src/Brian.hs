@@ -5,7 +5,7 @@ module Brian
 
 import Base1
 
-import Prelude ( Enum, error, undefined )
+import Prelude ( Enum, undefined )
 
 -- base --------------------------------
 
@@ -15,7 +15,7 @@ import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
 import Data.List           ( drop, filter, maximum, reverse, takeWhile, zip )
 import Data.List.NonEmpty  ( nonEmpty )
-import Data.Maybe          ( catMaybes, fromJust, fromMaybe, isJust )
+import Data.Maybe          ( catMaybes, fromMaybe )
 import GHC.Exts            ( IsList(toList), IsString(fromString) )
 import System.Environment  ( getArgs )
 import System.IO           ( putStrLn )
@@ -28,8 +28,9 @@ import Data.Set        qualified as Set
 
 -- fpath -------------------------------
 
-import FPath.File      ( File )
-import FPath.Parseable ( parse', readM )
+import FPath.File      ( File(FileR) )
+import FPath.Parseable ( readM )
+import FPath.RelFile   ( relfile )
 
 -- HTTP --------------------------------
 
@@ -43,7 +44,7 @@ import Control.Lens.Setter  ( (<>~) )
 
 -- logs-plus ---------------------------
 
-import Log ( Log, WithLog, infoT )
+import Log ( Log, infoT )
 
 -- logging-effect ----------------------
 
@@ -51,11 +52,7 @@ import Control.Monad.Log ( LoggingT, MonadLog )
 
 -- mockio-log --------------------------
 
-import MockIO.Log ( DoMock, MockIOClass )
-
--- monaderror-plus ---------------------
-
-import MonadError.IO.Error ( IOError )
+import MockIO.Log ( DoMock(DoMock), MockIOClass )
 
 -- monadio-plus ------------------------
 
@@ -64,10 +61,6 @@ import MonadIO.OpenFile ( readFileUTF8Lenient )
 -- more-unicode ------------------------
 
 import Data.MoreUnicode.Lens ( (⊩) )
-
--- natural -----------------------------
-
-import Natural ( One )
 
 -- neat-interpolation ------------------
 
@@ -86,22 +79,15 @@ import Control.Exception.Safe ( mask, onException )
 import Database.SQLite.Simple           ( Connection, FromRow, NamedParam((:=)),
                                           Only(Only), Query, SQLData,
                                           ToRow(toRow), executeNamed, execute_,
-                                          open, queryNamed, query_,
-                                          withTransaction )
+                                          open, queryNamed, query_ )
 import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.Ok        ( Ok(Errors, Ok) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
--- parsers -----------------------------
-
-import Text.Parser.Char        ( anyChar, string )
-import Text.Parser.Combinators ( choice, unexpected, (<?>) )
-
 -- stdmain --------------------------------
 
-import StdMain            ( LogTIO, stdMain )
-import StdMain.StdOptions ( DryRunLevel )
-import StdMain.UsageError ( UsageFPIOTPError )
+import StdMain            ( stdMain )
+import StdMain.UsageError ( AsUsageError, UsageFPIOTPError, throwUsageT )
 
 -- tagsoup -----------------------------
 
@@ -118,8 +104,7 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus                         ( TextualPlus(textual'), parseString,
-                                             parseText, tparse )
+import TextualPlus                         ( tparse )
 import TextualPlus.Error.TextualParseError ( AsTextualParseError,
                                              throwAsTextualParseError )
 
@@ -246,19 +231,16 @@ parseEntry ts =
   case breakOn ": " ⊳ (text ∘ pure ⊳ ts !! 1) of
     𝕵 ("Record number", n) →
       case readEither (drop 2 $ unpack n) of
-        𝕷 err → error $ show (err, drop 2 (unpack n))
+        𝕷 err → throwAsTextualParseError "unparsed record number"
+                                         [err, drop 2 (unpack n)]
         𝕽 n'  → addEntryFields (mkEntry n') (entryParagraphs ts)
     _ → throwAsTextualParseError "no record number!\n" (show ⊳ ts)
 
-printEntry ∷ Entry → IO ()
-printEntry ts = do
-  putStrLn $ [fmt|%T\n|] ts
+printEntry ∷ MonadIO μ ⇒ Entry → μ ()
+printEntry ts = liftIO ∘ putStrLn $ [fmt|%T\n|] ts
 
-instance ToField Medium where
-  toField m = toField (toText m)
-
-makeTable ∷ Connection → IO ()
-makeTable conn = do
+makeTable ∷ MonadIO μ ⇒ Connection → μ ()
+makeTable conn = liftIO $ do
   -- CR mpearce: it would be nice if we had a direct qq for Query
   let sql = fromString $ unpack [trimming|
               CREATE TABLE IF NOT EXISTS Records
@@ -425,51 +407,39 @@ buildTables ∷ AsTextualParseError ε ⇒
               Connection → [Tag 𝕋] → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
 buildTables conn ts = do
   tags_table ← getTagsTable conn
+  makeTable conn
   parseEntries ts ≫ foldM_ (insertEntry conn) tags_table
 
-data Options = Options { _dbFile    :: 𝕄 File
+data Options = Options { _dbFile    :: File
                        , _inputFile :: 𝕄 File
                        }
 
-dbFile ∷ Lens' Options (𝕄 File)
+dbFile ∷ Lens' Options File
 dbFile = lens _dbFile (\ o f → o { _dbFile = f })
 
 inputFile ∷ Lens' Options (𝕄 File)
 inputFile = lens _inputFile (\ o f → o { _inputFile = f })
 
 optionsParser ∷ Parser Options
-optionsParser = Options ⊳ optional (argument readM $ metavar "SQLITE-DB")
+optionsParser = Options ⊳ (argument readM $ metavar "SQLITE-DB")
                         ⊵ optional (argument readM $ metavar "INPUT-FILE")
 
-doMain ∷ (AsTextualParseError ε, AsIOError ε) ⇒
+doMain ∷ (AsIOError ε, AsTextualParseError ε, AsUsageError ε) ⇒
          DoMock → Options → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
-doMain dry_run opts = do
-  -- get these from the options
---  args ← liftIO $ getArgs
---  conn = (toString ⊳ o ⊣ dbFile)
-  conn ← sequence $ liftIO . open ∘ toString ⊳ opts ⊣ dbFile
-  t    ← sequence $ readFileUTF8Lenient ⊳ (opts ⊣ inputFile)
-{-
-  (t ∷ 𝕋, conn) ← case args of
-    [f,db] → case (parse' @File f, parse' @File db) of
-               (𝕽 f', 𝕽 db') → liftIO $ do
-                 conn ← open (toString db')
-                 makeTable conn
+doMain do_mock opts = do
+  if do_mock ≡ DoMock then throwUsageT "dry-run not yet implemented" else return ()
+  conn ← case opts ⊣ dbFile of -- sequence $ liftIO . open ∘ toString ⊳ opts ⊣ dbFile
+           FileR r | r ≡ [relfile|-|] → return 𝕹
+           x                          → liftIO $ 𝕵 ⊳ open (toString x)
+  t    ← case opts ⊣ inputFile of
+           𝕵 f → readFileUTF8Lenient f
+           𝕹   → pack ⊳ brian
 
-                 (ѥ $ readFileUTF8Lenient @IOError f') ≫ \ case
-                   𝕽 s → return (s,𝕵 conn)
-                   𝕷 e → error $ show e
+  let ts ∷ [Tag 𝕋] = parseTags t
 
-               (x,y) → error $ show (x,y)
-    []  → (,𝕹) ⊳ pack ⊳ brian
-    _   → error $ show args
--}
-
-  let ts ∷ 𝕄 [Tag 𝕋] = parseTags ⊳ t
-
-  case (conn, ts) of
---    𝕹 → forM_ (partitions (≈ "blockquote") ts) (printEntry ∘ parseEntry)
-    (𝕵 conn', 𝕵 ts') → buildTables conn' ts'
+  case conn of
+    𝕹   → parseEntries ts ≫ mapM_ printEntry
+    𝕵 c → buildTables c ts
 
 main ∷ IO ()
 main =
