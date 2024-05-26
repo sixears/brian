@@ -11,14 +11,15 @@ import Prelude ( Enum, error, undefined )
 
 import Data.List.NonEmpty qualified as NonEmpty
 
-import Control.Monad      ( foldM_, (=<<) )
-import Data.List          ( drop, filter, maximum, reverse, takeWhile, zip )
-import Data.List.NonEmpty ( nonEmpty )
-import Data.Maybe         ( catMaybes, fromJust )
-import GHC.Exts           ( IsList(toList), IsString(fromString) )
-import System.Environment ( getArgs )
-import System.IO          ( putStrLn )
-import Text.Read          ( Read(readPrec), readEither )
+import Control.Applicative ( optional )
+import Control.Monad       ( foldM_, (=<<) )
+import Data.List           ( drop, filter, maximum, reverse, takeWhile, zip )
+import Data.List.NonEmpty  ( nonEmpty )
+import Data.Maybe          ( catMaybes, fromJust, fromMaybe, isJust )
+import GHC.Exts            ( IsList(toList), IsString(fromString) )
+import System.Environment  ( getArgs )
+import System.IO           ( putStrLn )
+import Text.Read           ( Read(readPrec), readEither )
 
 -- containers --------------------------
 
@@ -28,7 +29,7 @@ import Data.Set        qualified as Set
 -- fpath -------------------------------
 
 import FPath.File      ( File )
-import FPath.Parseable ( parse' )
+import FPath.Parseable ( parse', readM )
 
 -- HTTP --------------------------------
 
@@ -42,15 +43,15 @@ import Control.Lens.Setter  ( (<>~) )
 
 -- logs-plus ---------------------------
 
-import Log ( Log )
+import Log ( Log, WithLog, infoT )
 
 -- logging-effect ----------------------
 
-import Control.Monad.Log ( LoggingT )
+import Control.Monad.Log ( LoggingT, MonadLog )
 
 -- mockio-log --------------------------
 
-import MockIO.Log ( MockIOClass )
+import MockIO.Log ( DoMock, MockIOClass )
 
 -- monaderror-plus ---------------------
 
@@ -72,6 +73,14 @@ import Natural ( One )
 
 import NeatInterpolation ( trimming )
 
+-- optparse-applicative ----------------
+
+import Options.Applicative ( Parser, argument, metavar )
+
+-- safe-exceptions ---------------------
+
+import Control.Exception.Safe ( mask, onException )
+
 -- sqlite-simple -----------------------
 
 import Database.SQLite.Simple           ( Connection, FromRow, NamedParam((:=)),
@@ -85,12 +94,12 @@ import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( string )
-import Text.Parser.Combinators ( choice )
+import Text.Parser.Char        ( anyChar, string )
+import Text.Parser.Combinators ( choice, unexpected, (<?>) )
 
 -- stdmain --------------------------------
 
-import StdMain            ( LogTIO, stdMain'' )
+import StdMain            ( LogTIO, stdMain )
 import StdMain.StdOptions ( DryRunLevel )
 import StdMain.UsageError ( UsageFPIOTPError )
 
@@ -111,7 +120,8 @@ import Text.Printer qualified as P
 
 import TextualPlus                         ( TextualPlus(textual'), parseString,
                                              parseText, tparse )
-import TextualPlus.Error.TextualParseError ( AsTextualParseError )
+import TextualPlus.Error.TextualParseError ( AsTextualParseError,
+                                             throwAsTextualParseError )
 
 -- word-wrap ---------------------------
 
@@ -122,8 +132,8 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Data ( BTag )
-
+import Brian.BTag   ( BTag )
+import Brian.Medium ( Medium )
 
 --------------------------------------------------------------------------------
 
@@ -159,24 +169,6 @@ brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
 
 text ∷ [Tag 𝕋] → 𝕋
 text = unwords ∘ words ∘ innerText
-
-data Medium = SoapOpera | TVSeries deriving (Show)
-
-instance Printable Medium where
-  print SoapOpera = P.text "Soap Opera"
-  print TVSeries  = P.text "TV Series"
-
-instance TextualPlus Medium where
-  textual' = -- choice [ string "Soap Opera" ⋫ pure SoapOpera
-                     {- , -}string "TV Series" ⋫ pure TVSeries
-                    -- ]
-
-{-
-parseMedium ∷ 𝕋 → Medium
-parseMedium "Soap Opera" = SoapOpera
-parseMedium "TV Series"  = TVSeries
-parseMedium t            = error $ [fmt|Unparsed medium: '%t'|] t
--}
 
 data Entry = Entry { _recordNumber :: ID
                    , _title        :: 𝕄 𝕋
@@ -256,7 +248,7 @@ parseEntry ts =
       case readEither (drop 2 $ unpack n) of
         𝕷 err → error $ show (err, drop 2 (unpack n))
         𝕽 n'  → addEntryFields (mkEntry n') (entryParagraphs ts)
-    _ → error $ "no record number!\n" ⊕ show ts
+    _ → throwAsTextualParseError "no record number!\n" (show ⊳ ts)
 
 printEntry ∷ Entry → IO ()
 printEntry ts = do
@@ -339,8 +331,8 @@ iData =
 insertSimple ∷ Connection → Insert → IO ()
 insertSimple conn i = forM_ (iData i) $ executeNamed conn (iQuery i)
 
-insertSimple' ∷ FromRow r ⇒ Connection → Insert → IO [[r]]
-insertSimple' conn i = forM (iData i) $ queryNamed conn (iQuery i)
+insertSimple' ∷ (MonadIO μ, FromRow r) ⇒ Connection → Insert → μ [[r]]
+insertSimple' conn i = liftIO $ forM (iData i) $ queryNamed conn (iQuery i)
 
 entryData ∷ Entry → Map.Map Column SQLData
 entryData e =  [ "id"          ~ e ⊣ recordNumber
@@ -377,17 +369,35 @@ type TagsTable = Map.Map BTag ID
 bTags ∷ TagsTable → Set.Set BTag
 bTags = fromList ∘ Map.keys
 
-insertEntry ∷ MonadIO μ ⇒ Connection → TagsTable → Entry → μ TagsTable
-insertEntry conn tgs e = liftIO ∘ withTransaction conn $ do
-  let insert = entryInsert e
-  insertSimple' conn insert ≫ \ case
-    [[Only (n :: ID)]] → do
-      putStrLn $ show n
-      insertTags conn tgs e n
-    _ → return tgs
+withTransactionPrivate ∷ MonadIO μ ⇒ Connection → IO a → μ a
+withTransactionPrivate conn action =
+  liftIO $ mask $ \restore -> do
+    begin
+    r <- restore action `onException` rollback
+    commit
+    return r
+  where
+    begin    = execute_ conn $ "BEGIN TRANSACTION"
+    commit   = execute_ conn $ "COMMIT TRANSACTION"
+    rollback = execute_ conn $ "ROLLBACK TRANSACTION"
 
-insertTags ∷ Connection → TagsTable → Entry → ID → IO TagsTable
-insertTags conn tgs e rid = do
+insertEntry ∷ (MonadIO μ, Default ω, MonadLog (Log ω) μ) ⇒
+              Connection → TagsTable → Entry → μ TagsTable
+insertEntry conn tgs e = do
+  liftIO ∘ execute_ conn $ "BEGIN TRANSACTION"
+  let insert = entryInsert e
+      name  = fromMaybe "NO-TITLE" $ e ⊣ title
+  tgs' ← insertSimple' conn insert ≫ \ case
+    [[Only (n :: ID)]] → do
+      infoT $ [fmt|inserted %d (%t)|] (unID n) name
+      insertTags conn tgs e n
+    _ → infoT ([fmt|no insert of %t|] name) ⪼ return tgs
+  liftIO ∘ execute_ conn $ "COMMIT TRANSACTION"
+  -- execute_ conn $ "ROLLBACK TRANSACTION" -- in emergency…
+  return tgs'
+
+insertTags ∷ MonadIO μ ⇒ Connection → TagsTable → Entry → ID → μ TagsTable
+insertTags conn tgs e rid = liftIO $ do
   let (ins, tgs') = tagsInsert tgs e
   forM_ ins $ insertSimple conn
   case nonEmpty (e ⊣ tags) of
@@ -417,11 +427,29 @@ buildTables conn ts = do
   tags_table ← getTagsTable conn
   parseEntries ts ≫ foldM_ (insertEntry conn) tags_table
 
-doMain ∷ AsTextualParseError ε ⇒
-         DryRunLevel One → () → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
-doMain dry_run _ = do
+data Options = Options { _dbFile    :: 𝕄 File
+                       , _inputFile :: 𝕄 File
+                       }
+
+dbFile ∷ Lens' Options (𝕄 File)
+dbFile = lens _dbFile (\ o f → o { _dbFile = f })
+
+inputFile ∷ Lens' Options (𝕄 File)
+inputFile = lens _inputFile (\ o f → o { _inputFile = f })
+
+optionsParser ∷ Parser Options
+optionsParser = Options ⊳ optional (argument readM $ metavar "SQLITE-DB")
+                        ⊵ optional (argument readM $ metavar "INPUT-FILE")
+
+doMain ∷ (AsTextualParseError ε, AsIOError ε) ⇒
+         DoMock → Options → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
+doMain dry_run opts = do
   -- get these from the options
-  args ← liftIO $ getArgs
+--  args ← liftIO $ getArgs
+--  conn = (toString ⊳ o ⊣ dbFile)
+  conn ← sequence $ liftIO . open ∘ toString ⊳ opts ⊣ dbFile
+  t    ← sequence $ readFileUTF8Lenient ⊳ (opts ⊣ inputFile)
+{-
   (t ∷ 𝕋, conn) ← case args of
     [f,db] → case (parse' @File f, parse' @File db) of
                (𝕽 f', 𝕽 db') → liftIO $ do
@@ -435,14 +463,17 @@ doMain dry_run _ = do
                (x,y) → error $ show (x,y)
     []  → (,𝕹) ⊳ pack ⊳ brian
     _   → error $ show args
+-}
 
-  let ts ∷ [Tag 𝕋] = parseTags t
+  let ts ∷ 𝕄 [Tag 𝕋] = parseTags ⊳ t
 
-  case conn of
+  case (conn, ts) of
 --    𝕹 → forM_ (partitions (≈ "blockquote") ts) (printEntry ∘ parseEntry)
-    𝕵 conn' → buildTables conn' ts
+    (𝕵 conn', 𝕵 ts') → buildTables conn' ts'
 
 main ∷ IO ()
-main = stdMain'' "manipulate a brianDB" (pure ()) (doMain @UsageFPIOTPError)
+main =
+  let desc ∷ 𝕋 = "manipulate a brianDB"
+  in  getArgs ≫ stdMain desc optionsParser (doMain @UsageFPIOTPError)
 
 -- that's all, folks! ----------------------------------------------------------
