@@ -49,6 +49,7 @@ import Text.Printer qualified as P
 
 import TextualPlus                         ( parse, parseText, tparse )
 import TextualPlus.Error.TextualParseError ( AsTextualParseError,
+                                             TextualParseError,
                                              throwAsTextualParseError )
 
 -- text --------------------------------
@@ -125,19 +126,23 @@ mkEntry n = Entry { _recordNumber = n, _title = 𝕹, _medium = 𝕹
 addEntryField ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
 addEntryField e t = do
   let p = second (stripPrefix ": ") $ (breakOn ":") t
-  x ← traceShow ("e",e,"t",t,"p",p) $ case p of
--- CR mpearce
---    ("Tags"       , 𝕵 t') → parseBTags t' ≫ return ∘ (e &) ∘ (tags <>~)
-          ("Tags"       , 𝕵 t') → tparse t' ≫ return ∘ (e &) ∘ (tags <>~)
-          ("Title"      , 𝕵 t') → return $ e & title       ⊩ t'
-          ("Medium"     , 𝕵 t') → tparse t' ≫ return ∘ (e &) . (medium ⊩)
-          ("Actress"    , 𝕵 t') → return $ e & actresses <>~ (splitOn ", " t')
-          ("Description", 𝕵 t') → return $ e & description ⊧ (t' :)
-          (_            , _   ) → return $ e & description ⊧ (t :)
-  traceShow ("x",x) $ return x
+  x ← case p of
+        ("Tags"       , 𝕵 t') → tparse t' ≫ return ∘ (e &) ∘ (tags <>~)
+        ("Title"      , 𝕵 t') → return $ e & title       ⊩ t'
+        ("Medium"     , 𝕵 t') → tparse t' ≫ return ∘ (e &) . (medium ⊩)
+        ("Actress"    , 𝕵 t') → return $ e & actresses <>~ (splitOn ", " t')
+        ("Description", 𝕵 t') → return $ e & description ⊧ (t' :)
+        (_            , _   ) → return $ e & description ⊧ (t :)
+  return x
+
+addEntryField' ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
+addEntryField' e t =
+  case addEntryField @TextualParseError e t of
+    𝕽 x → return x
+    𝕷 e → throwAsTextualParseError ([fmt|failed to parse entry field:%t|] t) ["«" ⊕ toString e ⊕ "»"]
 
 addEntryFields ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → [𝕋] → η Entry
-addEntryFields e ts = foldM addEntryField e ts
+addEntryFields e ts = foldM addEntryField' e ts
 
 entryParagraphs ∷ [Tag 𝕋] → [𝕋]
 entryParagraphs p = filter (≢ "") $ text ⊳⊳ partitions (≈ "br")

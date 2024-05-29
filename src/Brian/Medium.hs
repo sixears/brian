@@ -24,15 +24,17 @@ import TextualPlus ( TextualPlus(textual') )
 
 --------------------------------------------------------------------------------
 
-data Medium = SoapOpera | TVSeries deriving (Show)
+data Medium = SoapOpera | TVSeries | TVMovie deriving (Show)
 
 instance Printable Medium where
   print SoapOpera = P.text "Soap Opera"
   print TVSeries  = P.text "TV Series"
+  print TVMovie   = P.text "TV Movie"
 
 instance TextualPlus Medium where
   textual' = choice [ string "Soap Opera" ⋫ pure SoapOpera
                     , string "TV Series" ⋫ pure TVSeries
+                    , string "TV Movie"  ⋫ pure TVMovie
                     , many anyChar ≫ unexpected -- adds unparsed text to emsg
                     ] <?> "Medium"
 

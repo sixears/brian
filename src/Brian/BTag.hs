@@ -13,8 +13,8 @@ import Data.Semigroup ( Semigroup )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( oneOf, spaces, string )
-import Text.Parser.Combinators ( sepBy, (<?>) )
+import Text.Parser.Char        ( anyChar, oneOf, spaces, string )
+import Text.Parser.Combinators ( choice, sepBy, try, unexpected, (<?>) )
 import Text.Parser.Token       ( symbol )
 
 -- sqlite-simple -----------------------
@@ -46,7 +46,8 @@ instance Printable BTag where
   print = P.text ∘ unBTag
 
 instance TextualPlus BTag where
-  textual' = BTag ∘ pack ⊳ many (oneOf ('_' : ['a'..'z'])) <?> "BTag"
+  textual' = let chars = '_' : ['a'..'z'] ⊕ ['A'..'Z']
+    in  BTag ∘ pack ⊳ many (oneOf chars) <?> "BTag"
 
 instance ToField BTag where
   toField = toField ∘ unBTag
