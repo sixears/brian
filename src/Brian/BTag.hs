@@ -46,8 +46,8 @@ instance Printable BTag where
   print = P.text ∘ unBTag
 
 instance TextualPlus BTag where
-  textual' = let chars = '_' : ['a'..'z'] ⊕ ['A'..'Z']
-    in  BTag ∘ pack ⊳ many (oneOf chars) <?> "BTag"
+  textual' = let chars = "_/" ⊕ ['a'..'z'] ⊕ ['A'..'Z']
+             in  BTag ∘ pack ⊳ many (oneOf chars) <?> "BTag"
 
 instance ToField BTag where
   toField = toField ∘ unBTag
