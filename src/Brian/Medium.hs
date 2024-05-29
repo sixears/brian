@@ -24,7 +24,7 @@ import TextualPlus ( TextualPlus(textual') )
 
 --------------------------------------------------------------------------------
 
-data Medium = SoapOpera | TVSeries | TVMovie deriving (Show)
+data Medium = SoapOpera | TVSeries | TVMovie | Movie deriving (Show)
 
 instance Printable Medium where
   print SoapOpera = P.text "Soap Opera"
