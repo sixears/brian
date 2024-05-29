@@ -30,11 +30,13 @@ instance Printable Medium where
   print SoapOpera = P.text "Soap Opera"
   print TVSeries  = P.text "TV Series"
   print TVMovie   = P.text "TV Movie"
+  print Movie     = P.text "Movie"
 
 instance TextualPlus Medium where
   textual' = choice [ string "Soap Opera" ⋫ pure SoapOpera
                     , string "TV Series" ⋫ pure TVSeries
                     , string "TV Movie"  ⋫ pure TVMovie
+                    , string "Movie"     ⋫ pure Movie
                     , many anyChar ≫ unexpected -- adds unparsed text to emsg
                     ] <?> "Medium"
 
