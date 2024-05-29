@@ -6,7 +6,10 @@ module Brian.BTag
 
 import Base1
 
-import Prelude ( undefined )
+-- base --------------------------------
+
+import Data.Monoid    ( Monoid(mempty) )
+import Data.Semigroup ( Semigroup )
 
 -- parsers -----------------------------
 
@@ -54,6 +57,8 @@ instance FromField BTag where
     Errors x → Errors x
 
 newtype BTags = BTags { unBTags :: [BTag] }
+  deriving (IsList, Printable, Show)
+  deriving newtype (Monoid, Semigroup)
 
 instance TextualPlus BTags where
   textual' = (BTags ⊳ textual' `sepBy` (string "," ⋪ spaces)) <?> "BTags"

@@ -115,7 +115,7 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag   ( BTag )
+import Brian.BTag   ( BTag, unBTags )
 import Brian.Entry  ( Entry, actresses, description, medium, parseEntries,
                       parseEntry, printEntry, recordNumber, tags, title )
 import Brian.ID     ( ID(ID, unID), toℤ )
@@ -234,7 +234,7 @@ entryData e =  [ "id"          ~ e ⊣ recordNumber
 tagsInsert ∷ TagsTable → Entry → ([Insert], TagsTable)
 tagsInsert tgs e =
   let tgs_max = maximum $ ID 0 : Map.elems tgs
-      tg_new = Set.difference (fromList $ e ⊣ tags) (bTags tgs)
+      tg_new = Set.difference (fromList ∘ unBTags $ e ⊣ tags) (bTags tgs)
       tg_insert ∷ [(BTag,ID)]
       tg_insert = zip (Base1.toList tg_new) (drop 1 [tgs_max..])
 
@@ -288,7 +288,7 @@ insertTags ∷ MonadIO μ ⇒ Connection → TagsTable → Entry → ID → μ T
 insertTags conn tgs e rid = liftIO $ do
   let (ins, tgs') = tagsInsert tgs e
   forM_ ins $ insertSimple conn
-  case nonEmpty (e ⊣ tags) of
+  case nonEmpty (unBTags $ e ⊣ tags) of
     𝕹 → return ()
     𝕵 tg_ids' → do
       let mkref t = ["recordid" ~ rid, "tagid" ~ Map.lookup t tgs']

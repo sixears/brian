@@ -65,7 +65,7 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag   ( BTag, unBTags )
+import Brian.BTag   ( BTag, BTags, unBTags )
 import Brian.ID     ( ID(ID, unID), toℤ )
 import Brian.Medium ( Medium )
 
@@ -75,7 +75,7 @@ data Entry = Entry { _recordNumber :: ID
                    , _title        :: 𝕄 𝕋
                    , _medium       :: 𝕄 Medium
                    , _actresses    :: [𝕋]
-                   , _tags         :: [BTag]
+                   , _tags         :: BTags
                    , _description  :: [𝕋]
                    }
   deriving (Show)
@@ -95,7 +95,7 @@ medium = lens _medium (\ e mm → e { _medium = mm })
 actresses ∷ Lens' Entry ([𝕋])
 actresses = lens _actresses (\ e as → e { _actresses = as })
 
-tags ∷ Lens' Entry ([BTag])
+tags ∷ Lens' Entry BTags
 tags = lens _tags (\ e as → e { _tags = as })
 
 description ∷ Lens' Entry ([𝕋])
@@ -111,7 +111,7 @@ instance Printable Entry where
                      as → 𝕵 $ [fmt|Actresses   : %L|] as
                  , case e ⊣ tags of
                      [] → 𝕹
-                     ts → 𝕵 $ [fmt|Tags        : %L|] ts
+                     ts → 𝕵 $ [fmt|Tags        : %T|] ts
                  , case e ⊣ description of
                      [] → 𝕹
                      ts  → 𝕵 $ [fmt|Description :\n  %t|] (wrapText defaultWrapSettings { fillStrategy = FillIndent 2} 80 (unwords $ reverse ts))
@@ -120,7 +120,7 @@ instance Printable Entry where
 
 mkEntry ∷ ID → Entry
 mkEntry n = Entry { _recordNumber = n, _title = 𝕹, _medium = 𝕹
-                  , _actresses = [], _description = [], _tags = [] }
+                  , _actresses = [], _description = [], _tags = ф }
 
 addEntryField ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
 addEntryField e t = do
@@ -128,7 +128,7 @@ addEntryField e t = do
   x ← traceShow ("e",e,"t",t,"p",p) $ case p of
 -- CR mpearce
 --    ("Tags"       , 𝕵 t') → parseBTags t' ≫ return ∘ (e &) ∘ (tags <>~)
-          ("Tags"       , 𝕵 t') → tparse t' ≫ return ∘ (e &) ∘ (tags <>~) ∘ unBTags
+          ("Tags"       , 𝕵 t') → tparse t' ≫ return ∘ (e &) ∘ (tags <>~)
           ("Title"      , 𝕵 t') → return $ e & title       ⊩ t'
           ("Medium"     , 𝕵 t') → tparse t' ≫ return ∘ (e &) . (medium ⊩)
           ("Actress"    , 𝕵 t') → return $ e & actresses <>~ (splitOn ", " t')
