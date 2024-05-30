@@ -8,15 +8,13 @@ import Base1
 
 -- base --------------------------------
 
-import Data.Monoid    ( Monoid(mempty) )
-import Data.Semigroup ( Semigroup )
-import GHC.Exts       ( toList )
+import Data.Monoid ( Monoid )
+import GHC.Exts    ( toList )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( anyChar, oneOf, spaces, string )
-import Text.Parser.Combinators ( choice, sepBy, try, unexpected, (<?>) )
-import Text.Parser.Token       ( symbol )
+import Text.Parser.Char        ( oneOf )
+import Text.Parser.Combinators ( sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
@@ -26,7 +24,7 @@ import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- text --------------------------------
 
-import Data.Text ( intercalate, pack, splitOn )
+import Data.Text ( intercalate, pack )
 
 -- text-printer ------------------------
 
@@ -34,9 +32,7 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus                         ( TextualPlus(textual'), tparse' )
-import TextualPlus.Error.TextualParseError ( AsTextualParseError,
-                                             throwAsTextualParseError )
+import TextualPlus ( TextualPlus(textual') )
 
 --------------------------------------------------------------------------------
 

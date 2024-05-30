@@ -13,12 +13,11 @@ module Brian.Entry
   ) where
 
 import Base1
-import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
-import Data.List  ( drop, filter, maximum, reverse, takeWhile, zip )
-import Data.Maybe ( catMaybes, fromMaybe )
+import Data.List  ( drop, filter, reverse, takeWhile )
+import Data.Maybe ( catMaybes )
 import System.IO  ( putStrLn )
 import Text.Read  ( readEither )
 
@@ -32,14 +31,11 @@ import Data.MoreUnicode.Lens ( (⊩) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, FromRow, NamedParam((:=)),
-                                Only(Only), Query, SQLData, ToRow(toRow),
-                                executeNamed, execute_, open, queryNamed,
-                                query_ )
+import Database.SQLite.Simple ( ToRow(toRow) )
 
 -- tagsoup -----------------------------
 
-import Text.HTML.TagSoup ( Tag, innerText, parseTags, partitions, (~/=), (~==) )
+import Text.HTML.TagSoup ( Tag, innerText, partitions, (~/=), (~==) )
 
 -- text-printer ------------------------
 
@@ -47,15 +43,15 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus                         ( parse, parseText, tparse )
+import TextualPlus                         ( tparse )
 import TextualPlus.Error.TextualParseError ( AsTextualParseError,
                                              TextualParseError,
                                              throwAsTextualParseError )
 
 -- text --------------------------------
 
-import Data.Text ( breakOn, intercalate, pack, splitOn, stripPrefix, unpack,
-                   unwords, words )
+import Data.Text ( breakOn, intercalate, splitOn, stripPrefix, unpack, unwords,
+                   words )
 
 -- word-wrap ---------------------------
 
@@ -66,8 +62,8 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag   ( BTag, BTags, unBTags )
-import Brian.ID     ( ID(ID, unID), toℤ )
+import Brian.BTag   ( BTags )
+import Brian.ID     ( ID, toℤ )
 import Brian.Medium ( Medium )
 
 --------------------------------------------------------------------------------
@@ -138,8 +134,9 @@ addEntryField e t = do
 addEntryField' ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
 addEntryField' e t =
   case addEntryField @TextualParseError e t of
-    𝕽 x → return x
-    𝕷 e → throwAsTextualParseError ([fmt|failed to parse entry field:%t|] t) ["«" ⊕ toString e ⊕ "»"]
+    𝕽 x   → return x
+    𝕷 err → throwAsTextualParseError ([fmt|failed to parse entry field:%t|] t)
+                                     ["«" ⊕ toString err ⊕ "»"]
 
 addEntryFields ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → [𝕋] → η Entry
 addEntryFields e ts = foldM addEntryField' e ts

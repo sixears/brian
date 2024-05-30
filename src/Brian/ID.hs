@@ -12,7 +12,7 @@ import Prelude ( Enum )
 
 -- base --------------------------------
 
-import Text.Read ( Read(readPrec), readEither )
+import Text.Read ( Read(readPrec) )
 
 -- sqlite-simple -----------------------
 

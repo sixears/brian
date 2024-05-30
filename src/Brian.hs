@@ -5,21 +5,17 @@ module Brian
 
 import Base1
 
-import Prelude ( Enum, undefined )
-
 -- base --------------------------------
 
 import Data.List.NonEmpty qualified as NonEmpty
 
 import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
-import Data.List           ( drop, filter, maximum, reverse, takeWhile, zip )
+import Data.List           ( drop, maximum, reverse, zip )
 import Data.List.NonEmpty  ( nonEmpty )
-import Data.Maybe          ( catMaybes, fromMaybe )
+import Data.Maybe          ( fromMaybe )
 import GHC.Exts            ( IsList(toList), IsString(fromString) )
 import System.Environment  ( getArgs )
-import System.IO           ( putStrLn )
-import Text.Read           ( readEither )
 
 -- containers --------------------------
 
@@ -40,7 +36,6 @@ import Network.HTTP ( getResponseBody, postRequestWithBody, simpleHTTP )
 
 import Control.Lens.Getter  ( view )
 import Control.Lens.Indexed ( itoList )
-import Control.Lens.Setter  ( (<>~) )
 
 -- logs-plus ---------------------------
 
@@ -58,10 +53,6 @@ import MockIO.Log ( DoMock(DoMock), MockIOClass )
 
 import MonadIO.OpenFile ( readFileUTF8Lenient )
 
--- more-unicode ------------------------
-
-import Data.MoreUnicode.Lens ( (⊩) )
-
 -- neat-interpolation ------------------
 
 import NeatInterpolation ( trimming )
@@ -70,16 +61,12 @@ import NeatInterpolation ( trimming )
 
 import Options.Applicative ( Parser, argument, metavar )
 
--- safe-exceptions ---------------------
-
-import Control.Exception.Safe ( mask, onException )
-
 -- sqlite-simple -----------------------
 
 import Database.SQLite.Simple         ( Connection, FromRow, NamedParam((:=)),
                                         Only(Only), Query, SQLData,
-                                        ToRow(toRow), executeNamed, execute_,
-                                        open, queryNamed, query_ )
+                                        executeNamed, execute_, open,
+                                        queryNamed, query_ )
 import Database.SQLite.Simple.ToField ( ToField(toField) )
 
 -- stdmain --------------------------------
@@ -89,12 +76,11 @@ import StdMain.UsageError ( AsUsageError, UsageFPIOTPError, throwUsageT )
 
 -- tagsoup -----------------------------
 
-import Text.HTML.TagSoup ( Tag, innerText, parseTags, partitions, (~/=), (~==) )
+import Text.HTML.TagSoup ( Tag, parseTags )
 
 -- text --------------------------------
 
-import Data.Text ( breakOn, intercalate, pack, splitOn, stripPrefix, unpack,
-                   unwords, words )
+import Data.Text ( intercalate, pack, unpack )
 
 -- text-printer ------------------------
 
@@ -102,24 +88,16 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus                         ( tparse )
-import TextualPlus.Error.TextualParseError ( AsTextualParseError,
-                                             throwAsTextualParseError )
-
--- word-wrap ---------------------------
-
-import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
-                   defaultWrapSettings, wrapText )
+import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag   ( BTag, unBTags )
-import Brian.Entry  ( Entry, actresses, description, medium, parseEntries,
-                      parseEntry, printEntry, recordNumber, tags, title )
-import Brian.ID     ( ID(ID, unID), toℤ )
-import Brian.Medium ( Medium )
+import Brian.BTag  ( BTag, unBTags )
+import Brian.Entry ( Entry, actresses, description, medium, parseEntries,
+                     printEntry, recordNumber, tags, title )
+import Brian.ID    ( ID(ID, unID) )
 
 --------------------------------------------------------------------------------
 
@@ -131,19 +109,6 @@ openURL' x t = let content_type = "application/x-www-form-urlencoded"
 brian ∷ MonadIO μ ⇒ μ String
 brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
 
-
-(≈) ∷ Tag 𝕋 → 𝕊 → 𝔹
-(≈) tag t = (~==) tag ("<" ⊕ t ⊕ ">")
-
-(≉) ∷ Tag 𝕋 → 𝕊 → 𝔹
-(≉) tag t = (~/=) tag ("<" ⊕ t ⊕ ">")
-
-text ∷ [Tag 𝕋] → 𝕋
-text = unwords ∘ words ∘ innerText
-
-entryParagraphs ∷ [Tag 𝕋] → [𝕋]
-entryParagraphs p = filter (≢ "") $ text ⊳⊳ partitions (≈ "br")
-                                 $ takeWhile (≉ "/blockquote") p
 
 makeTable ∷ MonadIO μ ⇒ Connection → μ ()
 makeTable conn = liftIO $ do
@@ -256,18 +221,6 @@ type TagsTable = Map.Map BTag ID
 
 bTags ∷ TagsTable → Set.Set BTag
 bTags = fromList ∘ Map.keys
-
-withTransactionPrivate ∷ MonadIO μ ⇒ Connection → IO a → μ a
-withTransactionPrivate conn action =
-  liftIO $ mask $ \restore -> do
-    begin
-    r <- restore action `onException` rollback
-    commit
-    return r
-  where
-    begin    = execute_ conn $ "BEGIN TRANSACTION"
-    commit   = execute_ conn $ "COMMIT TRANSACTION"
-    rollback = execute_ conn $ "ROLLBACK TRANSACTION"
 
 insertEntry ∷ (MonadIO μ, Default ω, MonadLog (Log ω) μ) ⇒
               Connection → TagsTable → Entry → μ TagsTable
