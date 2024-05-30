@@ -46,7 +46,7 @@ instance Printable BTag where
   print = P.text ∘ unBTag
 
 instance TextualPlus BTag where
-  textual' = let chars = "_/" ⊕ ['a'..'z'] ⊕ ['A'..'Z']
+  textual' = let chars = "-_/ " ⊕ ['0'..'9'] ⊕ ['a'..'z'] ⊕ ['A'..'Z']
              in  BTag ∘ pack ⊳ many (oneOf chars) <?> "BTag"
 
 instance ToField BTag where
@@ -58,10 +58,11 @@ instance FromField BTag where
     Errors x → Errors x
 
 newtype BTags = BTags { unBTags :: [BTag] }
-  deriving (IsList, Printable, Show)
+  deriving (Printable, Show)
   deriving newtype (Monoid, Semigroup)
+  deriving anyclass (IsList)
 
 instance TextualPlus BTags where
-  textual' = (BTags ⊳ textual' `sepBy` (string "," ⋪ spaces)) <?> "BTags"
+  textual' = (BTags ⊳ textual' `sepBy` some (oneOf ".,<>:;()")) <?> "BTags"
 
 -- that's all, folks! ----------------------------------------------------------

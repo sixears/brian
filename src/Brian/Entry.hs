@@ -128,9 +128,9 @@ addEntryField e t = do
   let p = second (stripPrefix ": ") $ (breakOn ":") t
   x ← case p of
         ("Tags"       , 𝕵 t') → tparse t' ≫ return ∘ (e &) ∘ (tags <>~)
-        ("Title"      , 𝕵 t') → return $ e & title       ⊩ t'
         ("Medium"     , 𝕵 t') → tparse t' ≫ return ∘ (e &) . (medium ⊩)
         ("Actress"    , 𝕵 t') → return $ e & actresses <>~ (splitOn ", " t')
+        ("Title"      , 𝕵 t') → return $ e & title       ⊩ t'
         ("Description", 𝕵 t') → return $ e & description ⊧ (t' :)
         (_            , _   ) → return $ e & description ⊧ (t :)
   return x
