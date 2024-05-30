@@ -100,18 +100,15 @@ description = lens _description (\ e as → e { _description = as })
 
 instance Printable Entry where
   print e =
-    let fields = [ 𝕵 $ [fmt|Record      : %06d|] (toℤ $ e ⊣ recordNumber)
+    let mfmt xs f = case xs of [] → 𝕹; _ →  𝕵 $ f xs
+        wrap = wrapText defaultWrapSettings { fillStrategy = FillIndent 2 } 80
+        fields = [ 𝕵 $ [fmt|Record      : %06d|] (toℤ $ e ⊣ recordNumber)
                  , [fmt|Title       : %t|] ⊳ (e ⊣ title)
                  , [fmt|Medium      : %T|] ⊳ (e ⊣ medium)
-                 , case e ⊣ actresses of
-                     [] → 𝕹
-                     as → 𝕵 $ [fmt|Actresses   : %L|] as
-                 , case e ⊣ tags of
-                     [] → 𝕹
-                     ts → 𝕵 $ [fmt|Tags        : %T|] ts
-                 , case e ⊣ description of
-                     [] → 𝕹
-                     ts  → 𝕵 $ [fmt|Description :\n  %t|] (wrapText defaultWrapSettings { fillStrategy = FillIndent 2} 80 (unwords $ reverse ts))
+                 , mfmt (e ⊣ actresses) [fmtT|Actresses   : %L|]
+                 , mfmt (e ⊣ tags)      [fmt|Tags        : %T|]
+                 , mfmt (e ⊣ description)
+                        ([fmt|Description :\n  %t|] ∘ wrap ∘ unwords ∘ reverse)
                  ]
     in P.text $ intercalate "\n" (catMaybes fields)
 
