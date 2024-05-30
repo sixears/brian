@@ -10,6 +10,7 @@ import Base1
 
 import Data.Monoid    ( Monoid(mempty) )
 import Data.Semigroup ( Semigroup )
+import GHC.Exts       ( toList )
 
 -- parsers -----------------------------
 
@@ -25,7 +26,7 @@ import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- text --------------------------------
 
-import Data.Text ( pack, splitOn )
+import Data.Text ( intercalate, pack, splitOn )
 
 -- text-printer ------------------------
 
@@ -58,9 +59,16 @@ instance FromField BTag where
     Errors x → Errors x
 
 newtype BTags = BTags { unBTags :: [BTag] }
-  deriving (Printable, Show)
+  deriving (Show)
   deriving newtype (Monoid, Semigroup)
-  deriving anyclass (IsList)
+
+instance IsList BTags where
+  type instance Item BTags = BTag
+  fromList = BTags
+  toList   = unBTags
+
+instance Printable BTags where
+  print (BTags bs) = P.text $ intercalate ", " (toText ⊳ bs)
 
 instance TextualPlus BTags where
   textual' = (BTags ⊳ textual' `sepBy` some (oneOf ".,<>:;()")) <?> "BTags"
