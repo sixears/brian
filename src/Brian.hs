@@ -13,7 +13,6 @@ import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
 import Data.List           ( drop, maximum, reverse, zip )
 import Data.List.NonEmpty  ( nonEmpty )
-import Data.Maybe          ( fromMaybe )
 import GHC.Exts            ( IsList(toList), IsString(fromString) )
 import System.Environment  ( getArgs )
 
@@ -227,7 +226,7 @@ insertEntry ∷ (MonadIO μ, Default ω, MonadLog (Log ω) μ) ⇒
 insertEntry conn tgs e = do
   liftIO ∘ execute_ conn $ "BEGIN TRANSACTION"
   let insert = entryInsert e
-      name  = fromMaybe "NO-TITLE" $ e ⊣ title
+      name  = e ⊣ title
   tgs' ← insertSimple' conn insert ≫ \ case
     [[Only (n :: ID)]] → do
       infoT $ [fmt|inserted %d (%t)|] (unID n) name

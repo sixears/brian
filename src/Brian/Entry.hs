@@ -13,13 +13,17 @@ module Brian.Entry
   ) where
 
 import Base1
+import Debug.Trace ( traceShow )
+import Prelude     ( undefined )
 
 -- base --------------------------------
+
+import Data.Char qualified
 
 import Data.List  ( drop, filter, reverse, takeWhile )
 import Data.Maybe ( catMaybes )
 import System.IO  ( putStrLn )
-import Text.Read  ( readEither )
+import Text.Read  ( read, readEither )
 
 -- lens --------------------------------
 
@@ -28,6 +32,12 @@ import Control.Lens.Setter ( (<>~) )
 -- more-unicode ------------------------
 
 import Data.MoreUnicode.Lens ( (⊩) )
+
+-- parsers -----------------------------
+
+import Text.Parser.Char        ( CharParsing, anyChar, char, digit, noneOf,
+                                 oneOf, satisfy, spaces, string )
+import Text.Parser.Combinators ( sepBy, skipMany, (<?>) )
 
 -- sqlite-simple -----------------------
 
@@ -43,15 +53,16 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus                         ( tparse )
+import TextualPlus                         ( TextualPlus(textual'), tparse,
+                                             tparse' )
 import TextualPlus.Error.TextualParseError ( AsTextualParseError,
                                              TextualParseError,
                                              throwAsTextualParseError )
 
 -- text --------------------------------
 
-import Data.Text ( breakOn, intercalate, splitOn, stripPrefix, unpack, unwords,
-                   words )
+import Data.Text ( breakOn, intercalate, pack, splitOn, stripPrefix, unpack,
+                   unwords, words )
 
 -- word-wrap ---------------------------
 
@@ -63,13 +74,13 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 ------------------------------------------------------------
 
 import Brian.BTag   ( BTags )
-import Brian.ID     ( ID, toℤ )
+import Brian.ID     ( ID, fromℤ, toℤ )
 import Brian.Medium ( Medium )
 
 --------------------------------------------------------------------------------
 
 data Entry = Entry { _recordNumber :: ID
-                   , _title        :: 𝕄 𝕋
+                   , _title        :: 𝕋
                    , _medium       :: 𝕄 Medium
                    , _actresses    :: [𝕋]
                    , _tags         :: BTags
@@ -83,8 +94,8 @@ instance ToRow Entry where
 recordNumber ∷ Lens' Entry ID
 recordNumber = lens _recordNumber (\ e n → e { _recordNumber = n })
 
-title ∷ Lens' Entry (𝕄 𝕋)
-title = lens _title (\ e mt → e { _title = mt })
+title ∷ Lens' Entry 𝕋
+title = lens _title (\ e t → e { _title = t })
 
 medium ∷ Lens' Entry (𝕄 Medium)
 medium = lens _medium (\ e mm → e { _medium = mm })
@@ -103,7 +114,7 @@ instance Printable Entry where
     let mfmt xs f = case xs of [] → 𝕹; _ →  𝕵 $ f xs
         wrap = wrapText defaultWrapSettings { fillStrategy = FillIndent 2 } 80
         fields = [ 𝕵 $ [fmt|Record      : %06d|] (toℤ $ e ⊣ recordNumber)
-                 , [fmt|Title       : %t|] ⊳ (e ⊣ title)
+                 , 𝕵 $ [fmt|Title       : %t|] (e ⊣ title)
                  , [fmt|Medium      : %T|] ⊳ (e ⊣ medium)
                  , mfmt (e ⊣ actresses) [fmtT|Actresses   : %L|]
                  , mfmt (e ⊣ tags)      [fmt|Tags        : %T|]
@@ -113,7 +124,7 @@ instance Printable Entry where
     in P.text $ intercalate "\n" (catMaybes fields)
 
 mkEntry ∷ ID → Entry
-mkEntry n = Entry { _recordNumber = n, _title = 𝕹, _medium = 𝕹
+mkEntry n = Entry { _recordNumber = n, _title = "", _medium = 𝕹
                   , _actresses = [], _description = [], _tags = ф }
 
 addEntryField ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
@@ -123,7 +134,7 @@ addEntryField e t = do
         ("Tags"       , 𝕵 t') → tparse t' ≫ return ∘ (e &) ∘ (tags <>~)
         ("Medium"     , 𝕵 t') → tparse t' ≫ return ∘ (e &) . (medium ⊩)
         ("Actress"    , 𝕵 t') → return $ e & actresses <>~ (splitOn ", " t')
-        ("Title"      , 𝕵 t') → return $ e & title       ⊩ t'
+        ("Title"      , 𝕵 t') → return $ e & title       ⊢ t'
         ("Description", 𝕵 t') → return $ e & description ⊧ (t' :)
         (_            , _   ) → return $ e & description ⊧ (t :)
   return x
@@ -139,8 +150,9 @@ addEntryFields ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → [�
 addEntryFields e ts = foldM addEntryField' e ts
 
 entryParagraphs ∷ [Tag 𝕋] → [𝕋]
-entryParagraphs p = filter (≢ "") $ text ⊳⊳ partitions (≈ "br")
-                                 $ takeWhile (≉ "/blockquote") p
+entryParagraphs p =
+  filter (≢ "") $ text ⊳⊳ (\ ts → takeWhile (≉ "br") ts : partitions (≈ "br") ts)
+                $ takeWhile (≉ "/blockquote") p
 
 (≈) ∷ Tag 𝕋 → 𝕊 → 𝔹
 (≈) tag t = (~==) tag ("<" ⊕ t ⊕ ">")
@@ -161,8 +173,35 @@ parseEntry ts =
         𝕽 n'  → addEntryFields (mkEntry n') (entryParagraphs ts)
     _ → throwAsTextualParseError "no record number!\n" (show ⊳ ts)
 
+isSpace ∷ ℂ → 𝔹
+isSpace c = c ≢ '\n' ∧ Data.Char.isSpace c
+
+{- | Parses a white space character (any character which satisfies 'isSpace');
+     /not including newline/ -}
+whitespace ∷ CharParsing m ⇒ m ()
+whitespace =
+  let space = satisfy isSpace <?> "space"
+  in  skipMany space <?> "whitespace"
+{-# INLINE whitespace #-}
+
+instance TextualPlus Entry where
+  textual' =
+    let mkEntry' ∷ ℤ → 𝕋 → Medium → 𝕋 → Entry
+        mkEntry' n t m d = (mkEntry $ fromℤ n) { _title = t, _medium = 𝕵 m, _description = [d] }
+    in mkEntry' ⊳ (string "Record number:" ⋫ whitespace ⋫ (read ⊳ some digit) ⋪ whitespace ⋪ char '\n')
+                ⊵ (string "Title:" ⋫ whitespace ⋫ (pack ⊳ many (noneOf "\n")) ⋪ whitespace ⋪ char '\n')
+                ⊵ (string "Medium:" ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n')
+                ⊵ (pack ⊳ many anyChar) <?> "Entry"
+
+parseEntry' ∷ (MonadError ε η, AsTextualParseError ε) ⇒ [𝕋] → η Entry
+parseEntry' ts =
+  case tparse' (intercalate "\n" ts) of
+    𝕽 e  → return e
+    𝕷 err → throwAsTextualParseError "no parse Entry" (toString err : (unpack ⊳ ts))
+
 parseEntries ∷ (AsTextualParseError ε, MonadError ε η) ⇒ [Tag 𝕋] → η [Entry]
-parseEntries ts = mapM parseEntry (partitions (≈ "blockquote") ts)
+parseEntries ts =
+  mapM parseEntry' (entryParagraphs ⊳ partitions (≈ "blockquote") ts)
 
 printEntry ∷ MonadIO μ ⇒ Entry → μ ()
 printEntry ts = liftIO ∘ putStrLn $ [fmt|%T\n|] ts
