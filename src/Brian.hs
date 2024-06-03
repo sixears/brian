@@ -191,7 +191,7 @@ entryData ∷ Entry → Map.Map Column SQLData
 entryData e =  [ "id"          ~ e ⊣ recordNumber
                , "title"       ~ e ⊣ title
                , "medium"      ~ e ⊣ medium
-               , "actresses"   ~ intercalate "\v" (unActresses $ e ⊣ actresses)
+               , "actresses"   ~ toField (e ⊣ actresses) -- intercalate "\v" (unActresses $ e ⊣ actresses)
                , "description" ~ intercalate "\v" (reverse $ e ⊣ description)
                , "tags"        ~ (""∷𝕋)
                ]

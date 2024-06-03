@@ -118,7 +118,7 @@ instance Printable Entry where
         fields = [ 𝕵 $ [fmt|Record      : %06d|] (toℤ $ e ⊣ recordNumber)
                  , 𝕵 $ [fmt|Title       : %t|] (unTitle $ e ⊣ title)
                  , [fmt|Medium      : %T|] ⊳ (e ⊣ medium)
-                 , mfmt (unActresses $ e ⊣ actresses) [fmtT|Actresses   : %L|]
+                 , 𝕵 $ [fmtT|Actresses   : %T|]  (e ⊣ actresses)
                  , mfmt (e ⊣ tags)      [fmt|Tags        : %T|]
                  , mfmt (e ⊣ description)
                         ([fmt|Description :\n  %t|] ∘ wrap ∘ unwords ∘ reverse)
