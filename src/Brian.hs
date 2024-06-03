@@ -93,10 +93,11 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag  ( BTag, unBTags )
-import Brian.Entry ( Entry, actresses, description, medium, parseEntries,
-                     printEntry, recordNumber, tags, title )
-import Brian.ID    ( ID(ID, unID) )
+import Brian.Actresses ( unActresses )
+import Brian.BTag      ( BTag, unBTags )
+import Brian.Entry     ( Entry, actresses, description, medium, parseEntries,
+                         printEntry, recordNumber, tags, title )
+import Brian.ID        ( ID(ID, unID) )
 
 --------------------------------------------------------------------------------
 
@@ -190,7 +191,7 @@ entryData ∷ Entry → Map.Map Column SQLData
 entryData e =  [ "id"          ~ e ⊣ recordNumber
                , "title"       ~ e ⊣ title
                , "medium"      ~ e ⊣ medium
-               , "actresses"   ~ intercalate "\v" (e ⊣ actresses)
+               , "actresses"   ~ intercalate "\v" (unActresses $ e ⊣ actresses)
                , "description" ~ intercalate "\v" (reverse $ e ⊣ description)
                , "tags"        ~ (""∷𝕋)
                ]
