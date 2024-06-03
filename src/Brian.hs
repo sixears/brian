@@ -229,9 +229,9 @@ insertEntry conn tgs e = do
       name  = e ⊣ title
   tgs' ← insertSimple' conn insert ≫ \ case
     [[Only (n :: ID)]] → do
-      infoT $ [fmt|inserted %d (%t)|] (unID n) name
+      infoT $ [fmt|inserted %d (%T)|] (unID n) name
       insertTags conn tgs e n
-    _ → infoT ([fmt|no insert of %t|] name) ⪼ return tgs
+    _ → infoT ([fmt|no insert of %T|] name) ⪼ return tgs
   liftIO ∘ execute_ conn $ "COMMIT TRANSACTION"
   -- execute_ conn $ "ROLLBACK TRANSACTION" -- in emergency…
   return tgs'

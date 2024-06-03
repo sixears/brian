@@ -76,11 +76,12 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 import Brian.BTag   ( BTags )
 import Brian.ID     ( ID, fromℤ, toℤ )
 import Brian.Medium ( Medium )
+import Brian.Title  ( Title(Title), unTitle )
 
 --------------------------------------------------------------------------------
 
 data Entry = Entry { _recordNumber :: ID
-                   , _title        :: 𝕋
+                   , _title        :: Title
                    , _medium       :: 𝕄 Medium
                    , _actresses    :: [𝕋]
                    , _tags         :: BTags
@@ -89,12 +90,12 @@ data Entry = Entry { _recordNumber :: ID
   deriving (Show)
 
 instance ToRow Entry where
-  toRow e = toRow (e ⊣ recordNumber, e ⊣ title)
+  toRow e = toRow (e ⊣ recordNumber, unTitle $ e ⊣ title)
 
 recordNumber ∷ Lens' Entry ID
 recordNumber = lens _recordNumber (\ e n → e { _recordNumber = n })
 
-title ∷ Lens' Entry 𝕋
+title ∷ Lens' Entry Title
 title = lens _title (\ e t → e { _title = t })
 
 medium ∷ Lens' Entry (𝕄 Medium)
@@ -114,7 +115,7 @@ instance Printable Entry where
     let mfmt xs f = case xs of [] → 𝕹; _ →  𝕵 $ f xs
         wrap = wrapText defaultWrapSettings { fillStrategy = FillIndent 2 } 80
         fields = [ 𝕵 $ [fmt|Record      : %06d|] (toℤ $ e ⊣ recordNumber)
-                 , 𝕵 $ [fmt|Title       : %t|] (e ⊣ title)
+                 , 𝕵 $ [fmt|Title       : %t|] (unTitle $ e ⊣ title)
                  , [fmt|Medium      : %T|] ⊳ (e ⊣ medium)
                  , mfmt (e ⊣ actresses) [fmtT|Actresses   : %L|]
                  , mfmt (e ⊣ tags)      [fmt|Tags        : %T|]
@@ -124,7 +125,7 @@ instance Printable Entry where
     in P.text $ intercalate "\n" (catMaybes fields)
 
 mkEntry ∷ ID → Entry
-mkEntry n = Entry { _recordNumber = n, _title = "", _medium = 𝕹
+mkEntry n = Entry { _recordNumber = n, _title = Title "", _medium = 𝕹
                   , _actresses = [], _description = [], _tags = ф }
 
 addEntryField ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
@@ -134,7 +135,7 @@ addEntryField e t = do
         ("Tags"       , 𝕵 t') → tparse t' ≫ return ∘ (e &) ∘ (tags <>~)
         ("Medium"     , 𝕵 t') → tparse t' ≫ return ∘ (e &) . (medium ⊩)
         ("Actress"    , 𝕵 t') → return $ e & actresses <>~ (splitOn ", " t')
-        ("Title"      , 𝕵 t') → return $ e & title       ⊢ t'
+        ("Title"      , 𝕵 t') → return $ e & title       ⊢ Title t'
         ("Description", 𝕵 t') → return $ e & description ⊧ (t' :)
         (_            , _   ) → return $ e & description ⊧ (t :)
   return x
@@ -186,11 +187,11 @@ whitespace =
 
 instance TextualPlus Entry where
   textual' =
-    let mkEntry' ∷ ID → 𝕋 → Medium → 𝕋 → Entry
+    let mkEntry' ∷ ID → Title → Medium → 𝕋 → Entry
         mkEntry' n t m d = (mkEntry n) { _title = t, _medium = 𝕵 m, _description = [d] }
     in mkEntry' ⊳ (string "Record number:" ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n')
---                ⊳ (string "Record number:" ⋫ whitespace ⋫ (read ⊳ some digit) ⋪ whitespace ⋪ char '\n')
-                ⊵ (string "Title:" ⋫ whitespace ⋫ (pack ⊳ many (noneOf "\n")) ⋪ whitespace ⋪ char '\n')
+--                ⊵ (string "Title:" ⋫ whitespace ⋫ (pack ⊳ many (noneOf "\n")) ⋪ whitespace ⋪ char '\n')
+                ⊵ (string "Title:" ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n')
                 ⊵ (string "Medium:" ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n')
                 ⊵ (pack ⊳ many anyChar) <?> "Entry"
 
