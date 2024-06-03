@@ -186,9 +186,10 @@ whitespace =
 
 instance TextualPlus Entry where
   textual' =
-    let mkEntry' ∷ ℤ → 𝕋 → Medium → 𝕋 → Entry
-        mkEntry' n t m d = (mkEntry $ fromℤ n) { _title = t, _medium = 𝕵 m, _description = [d] }
-    in mkEntry' ⊳ (string "Record number:" ⋫ whitespace ⋫ (read ⊳ some digit) ⋪ whitespace ⋪ char '\n')
+    let mkEntry' ∷ ID → 𝕋 → Medium → 𝕋 → Entry
+        mkEntry' n t m d = (mkEntry n) { _title = t, _medium = 𝕵 m, _description = [d] }
+    in mkEntry' ⊳ (string "Record number:" ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n')
+--                ⊳ (string "Record number:" ⋫ whitespace ⋫ (read ⊳ some digit) ⋪ whitespace ⋪ char '\n')
                 ⊵ (string "Title:" ⋫ whitespace ⋫ (pack ⊳ many (noneOf "\n")) ⋪ whitespace ⋪ char '\n')
                 ⊵ (string "Medium:" ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n')
                 ⊵ (pack ⊳ many anyChar) <?> "Entry"

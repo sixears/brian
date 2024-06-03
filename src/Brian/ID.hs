@@ -20,10 +20,23 @@ import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.Ok        ( Ok(Errors, Ok) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
+-- textual-plus ------------------------
+
+import TextualPlus ( TextualPlus(textual') )
+
+------------------------------------------------------------
+--                     local imports                      --
+------------------------------------------------------------
+
+import Brian.NumberParsing ( denary )
+
 --------------------------------------------------------------------------------
 
 newtype ID = ID { unID :: ℕ }
   deriving (Enum, Eq, Ord, Show)
+
+instance TextualPlus ID where
+  textual' = ID ⊳ denary
 
 instance Read ID where
   readPrec = ID ⊳ readPrec
