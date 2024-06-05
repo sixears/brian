@@ -3,7 +3,7 @@ module Brian
   ( main
   ) where
 
-import Base1
+import Base1T
 
 -- base --------------------------------
 
@@ -179,7 +179,7 @@ iQuery i = fromString $
 iData ∷ Insert → [[NamedParam]]
 iData =
   fmap (\ (k,v) → (columnID k := v)) ∘ itoList ∘ unEntryData
-                                     ⩺ Base1.toList ∘ view iEntryData
+                                     ⩺ Base1T.toList ∘ view iEntryData
 
 insertSimple ∷ Connection → Insert → IO ()
 insertSimple conn i = forM_ (iData i) $ executeNamed conn (iQuery i)
@@ -192,7 +192,8 @@ entryData e =  [ "id"          ~ e ⊣ recordNumber
                , "title"       ~ e ⊣ title
                , "medium"      ~ e ⊣ medium
                , "actresses"   ~ toField (e ⊣ actresses) -- intercalate "\v" (unActresses $ e ⊣ actresses)
-               , "description" ~ intercalate "\v" (reverse $ e ⊣ description)
+--               , "description" ~ intercalate "\v" (reverse $ e ⊣ description)
+               , "description" ~ toField (e ⊣ description)
                , "tags"        ~ (""∷𝕋)
                ]
 
@@ -201,7 +202,7 @@ tagsInsert tgs e =
   let tgs_max = maximum $ ID 0 : Map.elems tgs
       tg_new = Set.difference (fromList ∘ unBTags $ e ⊣ tags) (bTags tgs)
       tg_insert ∷ [(BTag,ID)]
-      tg_insert = zip (Base1.toList tg_new) (drop 1 [tgs_max..])
+      tg_insert = zip (Base1T.toList tg_new) (drop 1 [tgs_max..])
 
       mk_tag_row (b,i) = ["id" ~ i, "tag" ~ b]
 

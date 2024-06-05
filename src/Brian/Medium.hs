@@ -3,7 +3,7 @@ module Brian.Medium
   ( Medium
   ) where
 
-import Base1
+import Base1T
 
 -- parsers -----------------------------
 

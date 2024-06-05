@@ -6,7 +6,7 @@ module Brian.ID
   , unID
   ) where
 
-import Base1
+import Base1T
 
 import Prelude ( Enum )
 

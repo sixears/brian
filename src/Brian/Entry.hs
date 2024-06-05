@@ -12,7 +12,7 @@ module Brian.Entry
   , title
   ) where
 
-import Base1
+import Base1T
 import Debug.Trace ( traceShow )
 import Prelude     ( undefined )
 
@@ -20,10 +20,12 @@ import Prelude     ( undefined )
 
 import Data.Char qualified
 
-import Data.List  ( drop, filter, reverse, takeWhile )
-import Data.Maybe ( catMaybes )
-import System.IO  ( putStrLn )
-import Text.Read  ( read, readEither )
+import Control.Monad.Fail ( MonadFail )
+import Data.Either        ( partitionEithers )
+import Data.List          ( drop, filter, reverse, takeWhile )
+import Data.Maybe         ( catMaybes )
+import System.IO          ( putStrLn )
+import Text.Read          ( read, readEither )
 
 -- lens --------------------------------
 
@@ -53,8 +55,8 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus                         ( TextualPlus(textual'), tparse,
-                                             tparse' )
+import TextualPlus                         ( TextualPlus(textual'), parseTextM,
+                                             tparse, tparse' )
 import TextualPlus.Error.TextualParseError ( AsTextualParseError,
                                              TextualParseError,
                                              throwAsTextualParseError )
@@ -73,11 +75,12 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Actresses ( Actresses, unActresses )
-import Brian.BTag      ( BTags )
-import Brian.ID        ( ID, fromℤ, toℤ )
-import Brian.Medium    ( Medium )
-import Brian.Title     ( Title(Title), unTitle )
+import Brian.Actresses   ( Actresses, unActresses )
+import Brian.BTag        ( BTags )
+import Brian.Description ( Description(Description), more, unDescription )
+import Brian.ID          ( ID, fromℤ, toℤ )
+import Brian.Medium      ( Medium )
+import Brian.Title       ( Title(Title), unTitle )
 
 --------------------------------------------------------------------------------
 
@@ -86,7 +89,7 @@ data Entry = Entry { _recordNumber :: ID
                    , _medium       :: 𝕄 Medium
                    , _actresses    :: Actresses
                    , _tags         :: BTags
-                   , _description  :: [𝕋]
+                   , _description  :: Description
                    }
   deriving (Show)
 
@@ -108,8 +111,8 @@ actresses = lens _actresses (\ e as → e { _actresses = as })
 tags ∷ Lens' Entry BTags
 tags = lens _tags (\ e as → e { _tags = as })
 
-description ∷ Lens' Entry ([𝕋])
-description = lens _description (\ e as → e { _description = as })
+description ∷ Lens' Entry Description
+description = lens _description (\ e d → e { _description = d })
 
 instance Printable Entry where
   print e =
@@ -120,15 +123,19 @@ instance Printable Entry where
                  , [fmt|Medium      : %T|] ⊳ (e ⊣ medium)
                  , 𝕵 $ [fmtT|Actresses   : %T|]  (e ⊣ actresses)
                  , mfmt (e ⊣ tags)      [fmt|Tags        : %T|]
+{-
                  , mfmt (e ⊣ description)
                         ([fmt|Description :\n  %t|] ∘ wrap ∘ unwords ∘ reverse)
+-}
+                 , 𝕵 $ [fmtT|Description : %T|]  (e ⊣ description)
                  ]
     in P.text $ intercalate "\n" (catMaybes fields)
 
 mkEntry ∷ ID → Entry
 mkEntry n = Entry { _recordNumber = n, _title = Title "", _medium = 𝕹
                   -- , _actresses = []
-                  , _description = [], _tags = ф }
+--                  , _description = []
+                  , _tags = ф }
 
 addEntryField ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
 addEntryField e t = do
@@ -138,8 +145,8 @@ addEntryField e t = do
         ("Medium"     , 𝕵 t') → tparse t' ≫ return ∘ (e &) . (medium ⊩)
 --        ("Actress"    , 𝕵 t') → return $ e & actresses <>~ (splitOn ", " t')
         ("Title"      , 𝕵 t') → return $ e & title       ⊢ Title t'
-        ("Description", 𝕵 t') → return $ e & description ⊧ (t' :)
-        (_            , _   ) → return $ e & description ⊧ (t :)
+--        ("Description", 𝕵 t') → return $ e & description ⊧ (t' :)
+--        (_            , _   ) → return $ e & description ⊧ (t :)
   return x
 
 addEntryField' ∷ (MonadError ε η, AsTextualParseError ε) ⇒ Entry → 𝕋 → η Entry
@@ -189,14 +196,46 @@ whitespace =
 
 instance TextualPlus Entry where
   textual' =
-    let mkEntry' ∷ ID → Title → Medium → Actresses → 𝕋 → Entry
-        mkEntry' n t m a d = (mkEntry n) { _title = t, _medium = 𝕵 m, _description = [d], _actresses = a }
+    let
+{-
+        mkEntry' ∷ ID → Title → Medium → Actresses → Description → Entry
+        mkEntry' n t m a d = (mkEntry n) { _title = t, _medium = 𝕵 m, _description = d, _actresses = a }
         ҕ t = string (t ⊕ ":") ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n'
+-}
+{-
+        mkEntry' ∷ (CharParsing η, MonadFail η) ⇒ ID → Title → Medium → Actresses → Description → ([𝕊],[𝕊]) → η Entry
+        mkEntry' n t m a d (gs,ds) = traceShow ("gs",gs) $ traceShow ("ds",ds) $ do
+          tags ← tparse gs
+          return $ (mkEntry n) { _title = t, _medium = 𝕵 m, _description = d, _actresses = a, _tags = tags }
+-}
+        mkEntry'' ∷ (CharParsing η, MonadFail η) ⇒ (ID, Title, Medium, Actresses, Description, ([𝕋],[𝕊])) → η Entry
+        mkEntry'' (n,t,m,a,d,(gs,ds)) = traceShow ("gs",gs) $ traceShow ("ds",ds) $ do
+          tags ← ю ⊳ mapM (parseTextM "BTag*") gs
+          return $ (mkEntry n) { _title = t, _medium = 𝕵 m, _description = d `more` (pack ⊳ ds), _actresses = a, _tags = tags }
+        ҕ t = string (t ⊕ ":") ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n'
+{-
+        mkEntry' ∷ ID → Title → Medium → Actresses → Description → BTags → Entry
+        mkEntry' n t m a d b = (mkEntry n) { _title = t, _medium = 𝕵 m, _description = d, _actresses = a, _tags = b }
+        ҕ t = string (t ⊕ ":") ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n'
+-}
+        restOfLine = many $ noneOf "\n"
+{-
     in mkEntry' ⊳ ҕ "Record number"
                 ⊵ ҕ "Title"
                 ⊵ ҕ "Medium"
                 ⊵ ҕ "Actress"
-                ⊵ (pack ⊳ many anyChar) <?> "Entry"
+                ⊵ ҕ "Description"
+--                ⊵ ҕ "Tags"
+                ⊵ partitionEithers ⊳ (((𝕷 ⊳ (string "Tags: " ⋫ restOfLine)) ∤ 𝕽 ⊳ restOfLine) `sepBy` char '\n')
+-}
+    in ((,,,,,) ⊳ ҕ "Record number"
+                ⊵ ҕ "Title"
+                ⊵ ҕ "Medium"
+                ⊵ ҕ "Actress"
+                ⊵ ҕ "Description"
+--                ⊵ ҕ "Tags"
+                ⊵ partitionEithers ⊳ (((𝕷 ∘ pack ⊳ (string "Tags: " ⋫ restOfLine)) ∤ 𝕽 ⊳ restOfLine) `sepBy` char '\n')
+                <?> "Entry") ≫ mkEntry''
 
 parseEntry' ∷ (MonadError ε η, AsTextualParseError ε) ⇒ [𝕋] → η Entry
 parseEntry' ts =

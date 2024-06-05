@@ -4,7 +4,7 @@ module Brian.BTag
   , BTags(unBTags)
   ) where
 
-import Base1
+import Base1T
 
 -- base --------------------------------
 
