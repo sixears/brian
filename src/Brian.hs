@@ -11,7 +11,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 
 import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
-import Data.List           ( drop, maximum, reverse, zip )
+import Data.List           ( drop, maximum, zip )
 import Data.List.NonEmpty  ( nonEmpty )
 import GHC.Exts            ( IsList(toList), IsString(fromString) )
 import System.Environment  ( getArgs )
@@ -79,7 +79,7 @@ import Text.HTML.TagSoup ( Tag, parseTags )
 
 -- text --------------------------------
 
-import Data.Text ( intercalate, pack, unpack )
+import Data.Text ( pack, unpack )
 
 -- text-printer ------------------------
 
@@ -93,11 +93,10 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Actresses ( unActresses )
-import Brian.BTag      ( BTag, unBTags )
-import Brian.Entry     ( Entry, actresses, description, medium, parseEntries,
-                         printEntry, recordNumber, tags, title )
-import Brian.ID        ( ID(ID, unID) )
+import Brian.BTag  ( BTag, unBTags )
+import Brian.Entry ( Entry, actresses, description, medium, parseEntries,
+                     printEntry, recordNumber, tags, title )
+import Brian.ID    ( ID(ID, unID) )
 
 --------------------------------------------------------------------------------
 
