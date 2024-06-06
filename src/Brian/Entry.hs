@@ -32,7 +32,7 @@ import Database.SQLite.Simple ( ToRow(toRow) )
 
 -- tagsoup -----------------------------
 
-import Text.HTML.TagSoup ( Tag, innerText, partitions, (~/=), (~==) )
+import Text.HTML.TagSoup ( Tag, partitions )
 
 -- text-printer ------------------------
 
@@ -47,7 +47,7 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError,
 
 -- text --------------------------------
 
-import Data.Text ( intercalate, pack, replace, unpack, unwords, words )
+import Data.Text ( intercalate, pack, replace, unpack )
 
 -- word-wrap ---------------------------
 
@@ -64,19 +64,10 @@ import Brian.Description ( Description, more )
 import Brian.ID          ( ID, toℤ )
 import Brian.Medium      ( Medium )
 import Brian.Parsers     ( whitespace )
+import Brian.TagSoup     ( text, (≈), (≉) )
 import Brian.Title       ( Title, unTitle )
 
 --------------------------------------------------------------------------------
-
-(≈) ∷ Tag 𝕋 → 𝕊 → 𝔹
-(≈) tag t = (~==) tag ("<" ⊕ t ⊕ ">")
-
-(≉) ∷ Tag 𝕋 → 𝕊 → 𝔹
-(≉) tag t = (~/=) tag ("<" ⊕ t ⊕ ">")
-
-text ∷ [Tag 𝕋] → 𝕋
-text = unwords ∘ words ∘ innerText
-
 
 data Entry = Entry { _recordNumber :: ID
                    , _title        :: Title

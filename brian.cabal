@@ -57,6 +57,7 @@ library
                      , Brian.Medium
                      , Brian.NumberParsing
                      , Brian.Parsers
+                     , Brian.TagSoup
                      , Brian.Title
 
   default-extensions: DeriveAnyClass
