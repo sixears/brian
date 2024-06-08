@@ -24,7 +24,7 @@ import System.IO           ( putStrLn )
 -- parsers -----------------------------
 
 import Text.Parser.Char        ( char, noneOf, string )
-import Text.Parser.Combinators ( sepBy, (<?>) )
+import Text.Parser.Combinators ( eof, sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
@@ -47,7 +47,14 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError,
 
 -- text --------------------------------
 
-import Data.Text ( intercalate, pack, replace, unpack )
+import Data.Text qualified as Text
+
+import Data.Text ( intercalate, pack, replace, unpack, unwords )
+
+-- textual-plus ------------------------
+
+import TextualPlus                         ( parseText )
+import TextualPlus.Error.TextualParseError ( tparseToME' )
 
 -- word-wrap ---------------------------
 
@@ -60,9 +67,9 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 
 import Brian.Actresses   ( Actresses )
 import Brian.BTag        ( BTags )
-import Brian.Description ( Description, more )
-import Brian.ID          ( ID, toℤ )
-import Brian.Medium      ( Medium )
+import Brian.Description ( Description(Description), more )
+import Brian.ID          ( ID(ID), toℤ )
+import Brian.Medium      ( Medium(Movie, SoapOpera) )
 import Brian.Parsers     ( whitespace )
 import Brian.TagSoup     ( text, (≈), (≉) )
 import Brian.Title       ( Title, unTitle )
@@ -76,7 +83,7 @@ data Entry = Entry { _recordNumber :: ID
                    , _tags         :: BTags
                    , _description  :: Description
                    }
-  deriving (Show)
+  deriving (Eq, Show)
 
 instance ToRow Entry where
   toRow e = toRow (e ⊣ recordNumber, unTitle $ e ⊣ title)
@@ -133,7 +140,8 @@ instance TextualPlus Entry where
                          , _actresses = a
                          , _tags = tgs
                          }
-        ҕ t = string (t ⊕ ":") ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ char '\n'
+        ҕ t = let end = (pure () ⋪ char '\n') ∤ eof
+              in  string (t ⊕ ":") ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ end
         restOfLine = many $ noneOf "\n"
     in ((,,,,,) ⊳ ҕ "Record number"
                 ⊵ ҕ "Title"
@@ -157,5 +165,86 @@ parseEntries ts =
 
 printEntry ∷ MonadIO μ ⇒ Entry → μ ()
 printEntry ts = liftIO ∘ putStrLn $ [fmt|%T\n|] ts
+
+-- tests -----------------------------------------------------------------------
+
+checkT ∷ (TextualPlus α, Eq α, Show α) ⇒ 𝕋 → α → TestTree
+checkT input exp =
+  testCase ("parseText: " ⊕ (unpack $ Text.takeWhile (≢ '\n') input)) $
+    𝕽 exp @=? (tparseToME' ∘ parseText) input
+
+{-| unit tests -}
+tests ∷ TestTree
+tests =
+  let unlines = intercalate "\n"
+  in  testGroup "Entry"
+      [ let t = unlines [ "Record number: 1"
+                        , "Title: Guiding Light"
+                        , "Medium: Soap Opera"
+                        , "Actress: Sherry Stringfield"
+                        , "Description: Aired December of 1990."
+                        , unwords [ "Stringfield is kidnapped and held for"
+                                  , "ransom by her ex. Tied to a" ]
+                        , unwords [ "chair and gagged with white cloth between"
+                                  , "the teeth. Several good closeups. Ungagged"
+                                  , "for a phone call, then regagged on screen."
+                                  ]
+                        , unwords [ "Tags: country_us, gagtype_cleave,"
+                                  , "bonddesc_chair, onscreen_gagging" ]
+                        ]
+          in checkT t
+          (Entry { _recordNumber = ID 1, _title = "Guiding Light"
+                 , _medium = 𝕵 SoapOpera, _actresses = ["Sherry Stringfield"]
+                 , _description = Description $
+                   unlines [ "Aired December of 1990."
+                           , unwords [ "Stringfield is kidnapped and held for"
+                                     , "ransom by her ex. Tied to a" ]
+                           , unwords [ "chair and gagged with white cloth"
+                                     , "between the teeth. Several good"
+                                     , "closeups. Ungagged for a phone call,"
+                                     , "then regagged on screen."
+                                     ]
+                           ]
+                 , _tags = [ "country_us", "gagtype_cleave", "bonddesc_chair"
+                           , "onscreen_gagging"]
+                 })
+      , let t = unlines [ "Record number: 158"
+                        , "Title: Ninja III: The Domination (1984)"
+                        , "Medium: Movie"
+                        , "Actress: Lucinda Dickey"
+                        , unwords [ "Description: About halfway through, she"
+                                  , "appears, ungagged, standing bound between"
+                                  , "two posts by ropes tied to leather cuffs"
+                                  , "around her outstretched wrists, and by two"
+                                  , "chains attached to a belt around her"
+                                  , "midsection, as she undergoes a ritual to"
+                                  , "call up the spirit of a ninja that has"
+                                  , "possessed her." ] ]
+          in checkT t
+          (Entry { _recordNumber = ID 158
+                 , _title = "Ninja III: The Domination (1984)"
+                 , _medium = 𝕵 Movie
+                 , _actresses = ["Lucinda Dickey"]
+                 , _description = Description $
+                     unwords [ "About halfway through, she appears, ungagged,"
+                             , "standing bound between two posts by ropes tied"
+                             , "to leather cuffs around her outstretched"
+                             , "wrists, and by two chains attached to a belt"
+                             , "around her midsection, as she undergoes a"
+                             , "ritual to call up the spirit of a ninja that"
+                             , "has possessed her."
+                             ]
+                 , _tags = []
+                 })
+        ]
+
+_test ∷ IO ExitCode
+_test = runTestTree tests
+
+_tests ∷ 𝕊 → IO ExitCode
+_tests = runTestsP tests
+
+_testr ∷ 𝕊 → ℕ → IO ExitCode
+_testr = runTestsReplay tests
 
 -- that's all, folks! ----------------------------------------------------------

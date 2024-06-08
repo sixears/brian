@@ -9,7 +9,7 @@ import Base1T
 -- base --------------------------------
 
 import Data.Monoid ( Monoid )
-import GHC.Exts    ( toList )
+import GHC.Exts    ( IsString, toList )
 
 -- parsers -----------------------------
 
@@ -38,6 +38,7 @@ import TextualPlus ( TextualPlus(textual') )
 
 newtype BTag = BTag { unBTag :: 𝕋 }
   deriving (Eq, Ord, Show)
+  deriving newtype (IsString)
 
 instance Printable BTag where
   print = P.text ∘ unBTag
@@ -56,7 +57,7 @@ instance FromField BTag where
 
 newtype BTags = BTags { unBTags :: [BTag] }
   deriving (Show)
-  deriving newtype (Monoid, Semigroup)
+  deriving newtype (Eq, Monoid, Semigroup)
 
 instance IsList BTags where
   type instance Item BTags = BTag
@@ -67,6 +68,6 @@ instance Printable BTags where
   print (BTags bs) = P.text $ intercalate ", " (toText ⊳ bs)
 
 instance TextualPlus BTags where
-  textual' = (BTags ⊳ textual' `sepBy` some (oneOf ".,<>:;()")) <?> "BTags"
+  textual' = (BTags ⊳ textual' `sepBy` some (oneOf " .,<>:;()")) <?> "BTags"
 
 -- that's all, folks! ----------------------------------------------------------

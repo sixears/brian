@@ -1,6 +1,6 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.Medium
-  ( Medium
+  ( Medium(Movie, SoapOpera)
   ) where
 
 import Base1T
@@ -25,7 +25,8 @@ import TextualPlus ( TextualPlus(textual') )
 --------------------------------------------------------------------------------
 
 data Medium = SoapOpera | TVSeries | TVMovie | Movie | MovieSerial | Other deriving
-  ( Show
+  ( Eq
+  , Show
   )
 
 instance Printable Medium where
