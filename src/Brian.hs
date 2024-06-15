@@ -13,6 +13,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 
 import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
+import Data.Function       ( flip )
 import Data.List           ( drop, filter, maximum, zip )
 import Data.List.NonEmpty  ( nonEmpty )
 import Data.Monoid         ( mconcat )
@@ -375,27 +376,27 @@ buildTables conn recreate mck = do
 
 data CreateTables = CreateTables | CreateReCreateTables
 
-data Options = Options { _dbFile       :: File
-                       , _inputFile    :: 𝕄 File
-                       , _createTables :: 𝕄 CreateTables
-                       }
+data Options ε = Options { _dbFile :: File
+                         , _inputFile :: 𝕄 File
+                         , _createTables :: 𝕄 (Connection -> DoMock -> LoggingT (Log MockIOClass) (ExceptT ε IO) ())
+                         }
 
-dbFile ∷ Lens' Options File
+dbFile ∷ Lens' (Options ε) File
 dbFile = lens _dbFile (\ o f → o { _dbFile = f })
 
-inputFile ∷ Lens' Options (𝕄 File)
+inputFile ∷ Lens' (Options ε) (𝕄 File)
 inputFile = lens _inputFile (\ o f → o { _inputFile = f })
 
-createTables ∷ Lens' Options (𝕄 CreateTables)
+createTables ∷ Lens' (Options ε) (𝕄 (Connection → DoMock → LoggingT (Log MockIOClass) (ExceptT ε IO) ()))
 createTables = lens _createTables (\ o c → o { _createTables = c })
 
-optionsParser ∷ Parser Options
+optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε) ⇒ Parser (Options ε)
 optionsParser =
-  let createTables = flag' CreateTables
+  let createTables = flag' (flip buildTables NoReCreateTables) -- CreateTables
                        (mconcat [ short 'C', long "create-tables"
                                 , help "create tables"
                                 ])
-      reCreateTables = flag' CreateReCreateTables
+      reCreateTables = flag' (flip buildTables ReCreateTables) -- CreateReCreateTables
                        (mconcat [ short 'R', long "re-create-tables"
                                 , help "delete and re-create tables"
                                 ])
@@ -404,7 +405,7 @@ optionsParser =
               ⊵ optional (createTables ∤ reCreateTables)
 
 doMain ∷ (AsIOError ε, AsTextualParseError ε, AsUsageError ε, AsSQLiteError ε) ⇒
-         DoMock → Options → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
+         DoMock → (Options ε) → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
 doMain mck opts = do
   case mck of
     DoMock → throwUsageT "dry-run not yet implemented"
@@ -424,10 +425,16 @@ doMain mck opts = do
     𝕵 c → do
       case opts ⊣ createTables of
         𝕹 → return ()
+{-
         𝕵 t → let t' = case t of
                          CreateTables         → NoReCreateTables
                          CreateReCreateTables → ReCreateTables
               in  buildTables c t' mck
+-}
+        𝕵 t → {- let t' = case t of
+                         CreateTables         → NoReCreateTables
+                         CreateReCreateTables → ReCreateTables
+              in -}  t c mck
       tags_table ← getTagsTable c
       parseEntries ts ≫ foldM_ (\ tgs e → insertEntry c tgs e mck) tags_table
 
