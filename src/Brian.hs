@@ -4,6 +4,8 @@ module Brian
   ) where
 
 import Base1T
+import Debug.Trace ( traceShow )
+import Prelude     ( undefined )
 
 -- base --------------------------------
 
@@ -11,8 +13,9 @@ import Data.List.NonEmpty qualified as NonEmpty
 
 import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
-import Data.List           ( drop, maximum, zip )
+import Data.List           ( drop, filter, maximum, zip )
 import Data.List.NonEmpty  ( nonEmpty )
+import Data.Monoid         ( mconcat )
 import GHC.Exts            ( IsList(toList), IsString(fromString) )
 import System.Environment  ( getArgs )
 
@@ -42,15 +45,24 @@ import Log ( Log, infoT )
 
 -- logging-effect ----------------------
 
-import Control.Monad.Log ( LoggingT, MonadLog )
+import Control.Monad.Log ( LoggingT, MonadLog, Severity(Debug, Informational) )
 
 -- mockio-log --------------------------
 
-import MockIO.Log ( DoMock(DoMock), MockIOClass )
+import MockIO.IOClass ( HasIOClass(ioClass), IOClass(IORead, IOWrite) )
+import MockIO.Log     ( DoMock(DoMock, NoMock), MockIOClass, mkIOLME )
 
 -- monadio-plus ------------------------
 
 import MonadIO.OpenFile ( readFileUTF8Lenient )
+
+-- monaderror-io -----------------------
+
+import MonadError.IO ( wrapAsIOErr )
+
+-- mtl ---------------------------------
+
+import Control.Monad.Except ( throwError )
 
 -- neat-interpolation ------------------
 
@@ -58,13 +70,21 @@ import NeatInterpolation ( trimming )
 
 -- optparse-applicative ----------------
 
-import Options.Applicative ( Parser, argument, metavar )
+import Options.Applicative ( Parser, argument, flag', help, long, metavar,
+                             short )
+
+-- safe-exceptions ---------------------
+
+import Control.Exception      qualified as Exception
+import Control.Exception.Safe ( try )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple         ( Connection, FromRow, NamedParam((:=)),
-                                        Only(Only), Query, SQLData,
-                                        executeNamed, execute_, open,
+import Database.SQLite.Simple qualified as SQLite
+
+import Database.SQLite.Simple         ( Connection, FormatError, FromRow,
+                                        NamedParam((:=)), Only(Only), Query,
+                                        SQLData, SQLError, executeNamed, open,
                                         queryNamed, query_ )
 import Database.SQLite.Simple.ToField ( ToField(toField) )
 
@@ -79,7 +99,7 @@ import Text.HTML.TagSoup ( Tag, parseTags )
 
 -- text --------------------------------
 
-import Data.Text ( pack, unpack )
+import Data.Text ( intercalate, pack, unpack )
 
 -- text-printer ------------------------
 
@@ -93,10 +113,12 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag  ( BTag, unBTags )
-import Brian.Entry ( Entry, actresses, description, medium, parseEntries,
-                     printEntry, recordNumber, tags, title )
-import Brian.ID    ( ID(ID, unID) )
+import Brian.BTag        ( BTag, unBTags )
+import Brian.Entry       ( Entry, actresses, description, medium, parseEntries,
+                           printEntry, recordNumber, tags, title )
+import Brian.ID          ( ID(ID, unID) )
+import Brian.SQLiteError ( AsSQLiteError(_SQLiteError), UsageSQLiteFPIOTPError,
+                           toAsSQLiteError, toSQLiteError )
 
 --------------------------------------------------------------------------------
 
@@ -109,6 +131,68 @@ brian ∷ MonadIO μ ⇒ μ String
 brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
 
 
+data ColumnType = CTypeText | CTypeInteger
+instance Printable ColumnType where
+  print CTypeText    = P.text "TEXT"
+  print CTypeInteger = P.text "INTEGER"
+
+data ColumnFlag = PrimaryKey | FlagUnique
+
+instance Printable ColumnFlag where
+  print PrimaryKey = P.text "PRIMARY KEY"
+  print FlagUnique = P.text "UNIQUE"
+
+data Column = Column { cname  :: ColumnName
+                     , ctype  :: ColumnType
+                     , cflags :: [ColumnFlag]
+                     }
+
+data TableFlag = OkayIfExists
+               | ForeignKey [ColumnName]
+  deriving (Eq, Show)
+
+instance Printable Column where
+  print (Column { cname, ctype, cflags }) =
+    let flags = ю $ (" " ⊕) ∘ toText ⊳ cflags
+    in  P.text $ [fmt|%T %T %t|] cname ctype flags
+
+catch ∷ (MonadIO μ, Exception ε, MonadError α μ) ⇒ IO β → (ε → IO α) → μ β
+catch io h =
+  liftIO ((𝕽 ⊳ io) `Exception.catch` (𝕷 ⩺ h)) ≫ either throwError return
+
+-- catchSQLError ∷
+
+execute_ ∷ (MonadIO μ, AsSQLiteError ε, MonadError ε μ) ⇒
+           Severity → Connection → Query → DoMock → μ ()
+--execute_ ∷ MonadIO μ ⇒ Severity → Connection → Query → DoMock → μ (𝔼 () ())
+execute_ sev conn sql mck =
+{-
+  let msg = [fmtT|sqlex %w|] sql
+  in  mkIOLME sev IOWrite msg () (liftIO $ SQLite.execute_ conn sql)
+-}
+--  const ∘ liftIO $ (𝕽 ⊳ SQLite.execute_ conn sql) `catch` (\ (e ∷ SQLError) → traceShow ("e",e)$ return (𝕷 ()))
+--  undefined
+-- \c s -> liftIO ((Right <$> SQLite.execute_ c s ) `catch` (\(e :: SQLError) -> traceShow ("e",e) $ return (Left e))) >>= either throwError return
+  (SQLite.execute_ conn sql) `catch` (\ e → return $ toAsSQLiteError @SQLError e)
+
+
+-- createTable ∷ MonadIO μ ⇒ Connection → μ ()
+createTable ∷ (MonadIO μ, AsSQLiteError ε, MonadError ε μ) ⇒
+              Connection → 𝕋 → [TableFlag] → [Column] → DoMock → μ ()
+createTable conn tname tflags cols mck =
+  let exists = if OkayIfExists ∈ tflags then "IF NOT EXISTS " else ""
+      columns = intercalate ", " $ toText ⊳ cols
+      sql = fromString $ [fmt|CREATE TABLE %t%t (%t)|] exists tname columns
+  in  execute_ Informational conn sql mck
+
+reCreateTable ∷ (MonadIO μ, AsSQLiteError ε, MonadError ε μ) ⇒
+                Connection → 𝕋 → [TableFlag] → [Column] → DoMock → μ ()
+reCreateTable conn tname tflags cols mck = do
+  execute_ Informational conn (fromString $ [fmt|DROP TABLE %T|] tname) mck
+  createTable conn tname (filter (≢ OkayIfExists) tflags) cols mck
+-- create table tagref ( recordid INTEGER, tagid INTEGER ) FOREIGN KEY( recordid ) REFERENCES Records(id), FOREIGN KEY (tagid) REFERENCES Tags(Id)
+-- create table tags ( id INTEGER PRIMARY KEY, tag TEXT UNIQUE )
+{-
 makeTable ∷ MonadIO μ ⇒ Connection → μ ()
 makeTable conn = liftIO $ do
   -- CR mpearce: it would be nice if we had a direct qq for Query
@@ -122,29 +206,30 @@ makeTable conn = liftIO $ do
                 , description TEXT)
             |]
   execute_ conn sql
+-}
 
 newtype Table = Table { unTable :: 𝕋 }
   deriving newtype (IsString, Show)
 
 instance Printable Table where print = P.text ∘ unTable
 
-newtype Column = Column { unColumn :: 𝕋 }
+newtype ColumnName = ColumnName { unColumnName :: 𝕋 }
   deriving newtype (Eq, IsString, Ord, Show)
 
-instance Printable Column where print = P.text ∘ unColumn
+instance Printable ColumnName where print = P.text ∘ unColumnName
 
-columnID ∷ Column → 𝕋
-columnID = (":"⊕) ∘ unColumn
+columnID ∷ ColumnName → 𝕋
+columnID = (":"⊕) ∘ unColumnName
 
 infix 5 ~
-(~) ∷ ToField τ ⇒ Column → τ → (Column,SQLData)
+(~) ∷ ToField τ ⇒ ColumnName → τ → (ColumnName,SQLData)
 a ~ b = (a, toField b)
 
-newtype EntryData = EntryData { unEntryData :: Map.Map Column SQLData }
+newtype EntryData = EntryData { unEntryData :: Map.Map ColumnName SQLData }
   deriving (Show)
 
 instance IsList EntryData where
-  type instance Item EntryData = (Column, SQLData)
+  type instance Item EntryData = (ColumnName, SQLData)
   fromList = EntryData ∘ fromList
   toList = Map.toList ∘ unEntryData
 
@@ -166,7 +251,7 @@ iExtra = lens _iExtra (\ i x → i { _iExtra = x })
 iEClause ∷ Insert → 𝕋
 iEClause i = maybe "" (" "⊕) (i ⊣ iExtra)
 
-iKeys ∷ Insert → [Column]
+iKeys ∷ Insert → [ColumnName]
 iKeys = Map.keys ∘ unEntryData ∘ NonEmpty.head ∘ view iEntryData
 
 iQuery ∷ Insert → Query
@@ -186,12 +271,11 @@ insertSimple conn i = forM_ (iData i) $ executeNamed conn (iQuery i)
 insertSimple' ∷ (MonadIO μ, FromRow r) ⇒ Connection → Insert → μ [[r]]
 insertSimple' conn i = liftIO $ forM (iData i) $ queryNamed conn (iQuery i)
 
-entryData ∷ Entry → Map.Map Column SQLData
+entryData ∷ Entry → Map.Map ColumnName SQLData
 entryData e =  [ "id"          ~ e ⊣ recordNumber
                , "title"       ~ e ⊣ title
                , "medium"      ~ e ⊣ medium
-               , "actresses"   ~ toField (e ⊣ actresses) -- intercalate "\v" (unActresses $ e ⊣ actresses)
---               , "description" ~ intercalate "\v" (reverse $ e ⊣ description)
+               , "actresses"   ~ toField (e ⊣ actresses)
                , "description" ~ toField (e ⊣ description)
                , "tags"        ~ (""∷𝕋)
                ]
@@ -222,10 +306,11 @@ type TagsTable = Map.Map BTag ID
 bTags ∷ TagsTable → Set.Set BTag
 bTags = fromList ∘ Map.keys
 
-insertEntry ∷ (MonadIO μ, Default ω, MonadLog (Log ω) μ) ⇒
-              Connection → TagsTable → Entry → μ TagsTable
-insertEntry conn tgs e = do
-  liftIO ∘ execute_ conn $ "BEGIN TRANSACTION"
+insertEntry ∷ (MonadIO μ, Default ω, MonadLog (Log ω) μ,
+               AsSQLiteError ε, MonadError ε μ) ⇒
+              Connection → TagsTable → Entry → DoMock → μ TagsTable
+insertEntry conn tgs e mck = do
+  execute_ Debug conn "BEGIN TRANSACTION" mck
   let insert = entryInsert e
       name  = e ⊣ title
   tgs' ← insertSimple' conn insert ≫ \ case
@@ -233,7 +318,7 @@ insertEntry conn tgs e = do
       infoT $ [fmt|inserted %d (%T)|] (unID n) name
       insertTags conn tgs e n
     _ → infoT ([fmt|no insert of %T|] name) ⪼ return tgs
-  liftIO ∘ execute_ conn $ "COMMIT TRANSACTION"
+  execute_ Debug conn "COMMIT TRANSACTION" mck
   -- execute_ conn $ "ROLLBACK TRANSACTION" -- in emergency…
   return tgs'
 
@@ -254,15 +339,39 @@ getTagsTable conn = liftIO $ do
   rows ← query_ conn sql
   return $ Map.fromList rows
 
-buildTables ∷ AsTextualParseError ε ⇒
-              Connection → [Tag 𝕋] → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
-buildTables conn ts = do
-  tags_table ← getTagsTable conn
-  makeTable conn
-  parseEntries ts ≫ foldM_ (insertEntry conn) tags_table
+data ReCreateTables = ReCreateTables | NoReCreateTables
 
-data Options = Options { _dbFile    :: File
-                       , _inputFile :: 𝕄 File
+buildTables ∷ (AsSQLiteError ε, AsTextualParseError ε) ⇒
+              Connection → ReCreateTables → [Tag 𝕋] → DoMock
+            → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
+buildTables conn recreate ts mck = do
+  let create = case recreate of
+                 ReCreateTables   → reCreateTable
+                 NoReCreateTables → createTable
+  create conn "Records" [ OkayIfExists ]
+         [ Column "id"          CTypeInteger [PrimaryKey]
+         , Column "title"       CTypeText    ф
+         , Column "medium"      CTypeText    ф
+         , Column "actresses"   CTypeText    ф
+         , Column "tags"        CTypeText    ф
+         , Column "description" CTypeText    ф
+         ] mck
+  create conn "Tags" [ OkayIfExists ]
+         [ Column "id"          CTypeInteger [PrimaryKey]
+         , Column "tag"         CTypeText    [FlagUnique]
+         ] mck
+  create conn "TagRef" [ OkayIfExists, ForeignKey ["recordid"] ]
+         [ Column "recordid"    CTypeInteger [PrimaryKey]
+         , Column "tagid"       CTypeInteger ф
+         ] mck
+--  tags_table ← getTagsTable conn
+--  parseEntries ts ≫ foldM_ (insertEntry conn) tags_table
+
+data CreateTables = CreateTables | CreateReCreateTables
+
+data Options = Options { _dbFile       :: File
+                       , _inputFile    :: 𝕄 File
+                       , _createTables :: 𝕄 CreateTables
                        }
 
 dbFile ∷ Lens' Options File
@@ -271,15 +380,31 @@ dbFile = lens _dbFile (\ o f → o { _dbFile = f })
 inputFile ∷ Lens' Options (𝕄 File)
 inputFile = lens _inputFile (\ o f → o { _inputFile = f })
 
-optionsParser ∷ Parser Options
-optionsParser = Options ⊳ (argument readM $ metavar "SQLITE-DB")
-                        ⊵ optional (argument readM $ metavar "INPUT-FILE")
+createTables ∷ Lens' Options (𝕄 CreateTables)
+createTables = lens _createTables (\ o c → o { _createTables = c })
 
-doMain ∷ (AsIOError ε, AsTextualParseError ε, AsUsageError ε) ⇒
+optionsParser ∷ Parser Options
+optionsParser =
+  let createTables = flag' CreateTables
+                       (mconcat [ short 'C', long "create-tables"
+                                , help "create tables"
+                                ])
+      reCreateTables = flag' CreateReCreateTables
+                       (mconcat [ short 'R', long "re-create-tables"
+                                , help "delete and re-create tables"
+                                ])
+  in  Options ⊳ (argument readM $ metavar "SQLITE-DB")
+              ⊵ optional (argument readM $ metavar "INPUT-FILE")
+              ⊵ optional (createTables ∤ reCreateTables)
+
+doMain ∷ (AsIOError ε, AsTextualParseError ε, AsUsageError ε, AsSQLiteError ε) ⇒
          DoMock → Options → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
-doMain do_mock opts = do
-  if do_mock ≡ DoMock then throwUsageT "dry-run not yet implemented" else return ()
-  conn ← case opts ⊣ dbFile of -- sequence $ liftIO . open ∘ toString ⊳ opts ⊣ dbFile
+doMain mck opts = do
+  case mck of
+    DoMock → throwUsageT "dry-run not yet implemented"
+    NoMock → return ()
+
+  conn ← case opts ⊣ dbFile of
            FileR r | r ≡ [relfile|-|] → return 𝕹
            x                          → liftIO $ 𝕵 ⊳ open (toString x)
   t    ← case opts ⊣ inputFile of
@@ -290,11 +415,20 @@ doMain do_mock opts = do
 
   case conn of
     𝕹   → parseEntries ts ≫ mapM_ printEntry
-    𝕵 c → buildTables c ts
+    𝕵 c → do
+      case opts ⊣ createTables of
+        𝕹 → return ()
+        𝕵 t → let t' = case t of
+                         CreateTables         → NoReCreateTables
+                         CreateReCreateTables → ReCreateTables
+              in  buildTables c t' ts mck
+      tags_table ← getTagsTable c
+      parseEntries ts ≫ foldM_ (\ tgs e → insertEntry c tgs e mck) tags_table
+
 
 main ∷ IO ()
 main =
   let desc ∷ 𝕋 = "manipulate a brianDB"
-  in  getArgs ≫ stdMain desc optionsParser (doMain @UsageFPIOTPError)
+  in  getArgs ≫ stdMain desc optionsParser (doMain @UsageSQLiteFPIOTPError)
 
 -- that's all, folks! ----------------------------------------------------------
