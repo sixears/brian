@@ -160,20 +160,17 @@ catch ∷ (MonadIO μ, Exception ε, MonadError α μ) ⇒ IO β → (ε → IO 
 catch io h =
   liftIO ((𝕽 ⊳ io) `Exception.catch` (𝕷 ⩺ h)) ≫ either throwError return
 
--- catchSQLError ∷
+catches ∷ (MonadIO μ, MonadError α μ) ⇒ IO β → [Exception.Handler α] → μ β
+catches io h = do
+    liftIO ((𝕽 ⊳ io) `Exception.catches` (𝕷 ⊳⊳ h)) ≫ either throwError return
 
 execute_ ∷ (MonadIO μ, AsSQLiteError ε, MonadError ε μ) ⇒
            Severity → Connection → Query → DoMock → μ ()
---execute_ ∷ MonadIO μ ⇒ Severity → Connection → Query → DoMock → μ (𝔼 () ())
 execute_ sev conn sql mck =
-{-
-  let msg = [fmtT|sqlex %w|] sql
-  in  mkIOLME sev IOWrite msg () (liftIO $ SQLite.execute_ conn sql)
--}
---  const ∘ liftIO $ (𝕽 ⊳ SQLite.execute_ conn sql) `catch` (\ (e ∷ SQLError) → traceShow ("e",e)$ return (𝕷 ()))
---  undefined
--- \c s -> liftIO ((Right <$> SQLite.execute_ c s ) `catch` (\(e :: SQLError) -> traceShow ("e",e) $ return (Left e))) >>= either throwError return
-  (SQLite.execute_ conn sql) `catch` (\ e → return $ toAsSQLiteError @SQLError e)
+  let handlers = [ Exception.Handler $ return ∘ toAsSQLiteError @SQLError
+                 , Exception.Handler $ return ∘ toAsSQLiteError @FormatError
+                 ]
+  in  (SQLite.execute_ conn sql) `catches` handlers
 
 
 -- createTable ∷ MonadIO μ ⇒ Connection → μ ()

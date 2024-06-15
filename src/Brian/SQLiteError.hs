@@ -81,6 +81,8 @@ instance ToSQLiteError SQLError where
 instance ToSQLiteError FormatError where
   toSQLiteError = flip SQLE_FormatError callStack
 
+
+
 ------------------------------------------------------------
 
 {-| prisms including @SQLiteError -}
