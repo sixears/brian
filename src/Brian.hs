@@ -50,7 +50,8 @@ import Control.Monad.Log ( LoggingT, MonadLog, Severity(Debug, Informational) )
 -- mockio-log --------------------------
 
 import MockIO.IOClass ( HasIOClass(ioClass), IOClass(IORead, IOWrite) )
-import MockIO.Log     ( DoMock(DoMock, NoMock), MockIOClass, mkIOLME )
+import MockIO.Log     ( DoMock(DoMock, NoMock), HasDoMock, MockIOClass,
+                        mkIOLME )
 
 -- monadio-plus ------------------------
 
@@ -164,17 +165,21 @@ catches ∷ (MonadIO μ, MonadError α μ) ⇒ IO β → [Exception.Handler α] 
 catches io h = do
     liftIO ((𝕽 ⊳ io) `Exception.catches` (𝕷 ⊳⊳ h)) ≫ either throwError return
 
-execute_ ∷ (MonadIO μ, AsSQLiteError ε, MonadError ε μ) ⇒
+execute_ ∷ ∀ ε ω μ . (MonadIO μ, AsSQLiteError ε, MonadError ε μ,
+                      MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω)⇒
            Severity → Connection → Query → DoMock → μ ()
-execute_ sev conn sql mck =
+execute_ sev conn sql =
   let handlers = [ Exception.Handler $ return ∘ toAsSQLiteError @SQLError
                  , Exception.Handler $ return ∘ toAsSQLiteError @FormatError
                  ]
-  in  (SQLite.execute_ conn sql) `catches` handlers
+--  in  (SQLite.execute_ conn sql) `catches` handlers
+  in  mkIOLME sev IOWrite ("FIXME"∷𝕋) () ((SQLite.execute_ conn sql) `catches` handlers)
 
 
 -- createTable ∷ MonadIO μ ⇒ Connection → μ ()
-createTable ∷ (MonadIO μ, AsSQLiteError ε, MonadError ε μ) ⇒
+createTable ∷ ∀ ε ω μ .
+              (MonadIO μ, AsSQLiteError ε, MonadError ε μ,
+               MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
               Connection → 𝕋 → [TableFlag] → [Column] → DoMock → μ ()
 createTable conn tname tflags cols mck =
   let exists = if OkayIfExists ∈ tflags then "IF NOT EXISTS " else ""
@@ -182,7 +187,9 @@ createTable conn tname tflags cols mck =
       sql = fromString $ [fmt|CREATE TABLE %t%t (%t)|] exists tname columns
   in  execute_ Informational conn sql mck
 
-reCreateTable ∷ (MonadIO μ, AsSQLiteError ε, MonadError ε μ) ⇒
+reCreateTable ∷ ∀ ε ω μ .
+                (MonadIO μ, AsSQLiteError ε, MonadError ε μ,
+                 MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
                 Connection → 𝕋 → [TableFlag] → [Column] → DoMock → μ ()
 reCreateTable conn tname tflags cols mck = do
   execute_ Informational conn (fromString $ [fmt|DROP TABLE %T|] tname) mck
@@ -303,8 +310,10 @@ type TagsTable = Map.Map BTag ID
 bTags ∷ TagsTable → Set.Set BTag
 bTags = fromList ∘ Map.keys
 
-insertEntry ∷ (MonadIO μ, Default ω, MonadLog (Log ω) μ,
-               AsSQLiteError ε, MonadError ε μ) ⇒
+insertEntry ∷ ∀ ε ω μ .
+              (MonadIO μ, Default ω, MonadLog (Log ω) μ,
+               AsSQLiteError ε, MonadError ε μ,
+               MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
               Connection → TagsTable → Entry → DoMock → μ TagsTable
 insertEntry conn tgs e mck = do
   execute_ Debug conn "BEGIN TRANSACTION" mck
@@ -339,9 +348,9 @@ getTagsTable conn = liftIO $ do
 data ReCreateTables = ReCreateTables | NoReCreateTables
 
 buildTables ∷ (AsSQLiteError ε, AsTextualParseError ε) ⇒
-              Connection → ReCreateTables → [Tag 𝕋] → DoMock
+              Connection → ReCreateTables → DoMock
             → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
-buildTables conn recreate ts mck = do
+buildTables conn recreate mck = do
   let create = case recreate of
                  ReCreateTables   → reCreateTable
                  NoReCreateTables → createTable
@@ -418,7 +427,7 @@ doMain mck opts = do
         𝕵 t → let t' = case t of
                          CreateTables         → NoReCreateTables
                          CreateReCreateTables → ReCreateTables
-              in  buildTables c t' ts mck
+              in  buildTables c t' mck
       tags_table ← getTagsTable c
       parseEntries ts ≫ foldM_ (\ tgs e → insertEntry c tgs e mck) tags_table
 
