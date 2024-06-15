@@ -348,9 +348,10 @@ getTagsTable conn = liftIO $ do
 
 data ReCreateTables = ReCreateTables | NoReCreateTables
 
-buildTables ∷ (AsSQLiteError ε, AsTextualParseError ε) ⇒
-              Connection → ReCreateTables → DoMock
-            → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
+buildTables ∷ ∀ ε ω μ .
+              (MonadIO μ, AsSQLiteError ε, AsTextualParseError ε,MonadError ε μ,
+               MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
+              Connection → ReCreateTables → DoMock → μ ()
 buildTables conn recreate mck = do
   let create = case recreate of
                  ReCreateTables   → reCreateTable
@@ -424,17 +425,8 @@ doMain mck opts = do
     𝕹   → parseEntries ts ≫ mapM_ printEntry
     𝕵 c → do
       case opts ⊣ createTables of
-        𝕹 → return ()
-{-
-        𝕵 t → let t' = case t of
-                         CreateTables         → NoReCreateTables
-                         CreateReCreateTables → ReCreateTables
-              in  buildTables c t' mck
--}
-        𝕵 t → {- let t' = case t of
-                         CreateTables         → NoReCreateTables
-                         CreateReCreateTables → ReCreateTables
-              in -}  t c mck
+        𝕹        → return ()
+        𝕵 create → create c mck
       tags_table ← getTagsTable c
       parseEntries ts ≫ foldM_ (\ tgs e → insertEntry c tgs e mck) tags_table
 
