@@ -119,6 +119,7 @@ import Brian.BTag        ( BTag, unBTags )
 import Brian.Entry       ( Entry, actresses, description, medium, parseEntries,
                            printEntry, recordNumber, tags, title )
 import Brian.ID          ( ID(ID, unID) )
+import Brian.SQLite      ( execute_ )
 import Brian.SQLiteError ( AsSQLiteError(_SQLiteError), UsageSQLiteFPIOTPError,
                            toAsSQLiteError, toSQLiteError )
 
@@ -131,7 +132,6 @@ openURL' x t = let content_type = "application/x-www-form-urlencoded"
 
 brian ∷ MonadIO μ ⇒ μ String
 brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
-
 
 data ColumnType = CTypeText | CTypeInteger
 instance Printable ColumnType where
@@ -158,23 +158,8 @@ instance Printable Column where
     let flags = ю $ (" " ⊕) ∘ toText ⊳ cflags
     in  P.text $ [fmt|%T %T %t|] cname ctype flags
 
-catch ∷ (MonadIO μ, Exception ε, MonadError α μ) ⇒ IO β → (ε → IO α) → μ β
-catch io h =
-  liftIO ((𝕽 ⊳ io) `Exception.catch` (𝕷 ⩺ h)) ≫ either throwError return
 
-catches ∷ (MonadIO μ, MonadError α μ) ⇒ IO β → [Exception.Handler α] → μ β
-catches io h = do
-    liftIO ((𝕽 ⊳ io) `Exception.catches` (𝕷 ⊳⊳ h)) ≫ either throwError return
-
-execute_ ∷ ∀ ε ω μ . (MonadIO μ, AsSQLiteError ε, MonadError ε μ,
-                      MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω)⇒
-           Severity → Connection → Query → DoMock → μ ()
-execute_ sev conn sql =
-  let handlers = [ Exception.Handler $ return ∘ toAsSQLiteError @SQLError
-                 , Exception.Handler $ return ∘ toAsSQLiteError @FormatError
-                 ]
 --  in  (SQLite.execute_ conn sql) `catches` handlers
-  in  mkIOLME sev IOWrite ("FIXME"∷𝕋) () ((SQLite.execute_ conn sql) `catches` handlers)
 
 
 -- createTable ∷ MonadIO μ ⇒ Connection → μ ()
@@ -388,16 +373,18 @@ dbFile = lens _dbFile (\ o f → o { _dbFile = f })
 inputFile ∷ Lens' (Options ε) (𝕄 File)
 inputFile = lens _inputFile (\ o f → o { _inputFile = f })
 
-createTables ∷ Lens' (Options ε) (𝕄 (Connection → DoMock → LoggingT (Log MockIOClass) (ExceptT ε IO) ()))
+createTables ∷
+  Lens' (Options ε)
+        (𝕄 (Connection → DoMock → LoggingT (Log MockIOClass) (ExceptT ε IO) ()))
 createTables = lens _createTables (\ o c → o { _createTables = c })
 
 optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε) ⇒ Parser (Options ε)
 optionsParser =
-  let createTables = flag' (flip buildTables NoReCreateTables) -- CreateTables
+  let createTables = flag' (flip buildTables NoReCreateTables)
                        (mconcat [ short 'C', long "create-tables"
                                 , help "create tables"
                                 ])
-      reCreateTables = flag' (flip buildTables ReCreateTables) -- CreateReCreateTables
+      reCreateTables = flag' (flip buildTables ReCreateTables)
                        (mconcat [ short 'R', long "re-create-tables"
                                 , help "delete and re-create tables"
                                 ])
