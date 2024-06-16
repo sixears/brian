@@ -4,8 +4,6 @@ module Brian
   ) where
 
 import Base1T
-import Debug.Trace ( traceShow )
-import Prelude     ( undefined )
 
 -- base --------------------------------
 
@@ -50,50 +48,29 @@ import Control.Monad.Log ( LoggingT, MonadLog, Severity(Debug, Informational) )
 
 -- mockio-log --------------------------
 
-import MockIO.IOClass ( HasIOClass(ioClass), IOClass(IORead, IOWrite) )
-import MockIO.Log     ( DoMock(DoMock, NoMock), HasDoMock, MockIOClass,
-                        mkIOLME )
+import MockIO.IOClass ( HasIOClass )
+import MockIO.Log     ( DoMock(DoMock, NoMock), HasDoMock, MockIOClass )
 
 -- monadio-plus ------------------------
 
 import MonadIO.OpenFile ( readFileUTF8Lenient )
-
--- monaderror-io -----------------------
-
-import MonadError.IO ( wrapAsIOErr )
-
--- mtl ---------------------------------
-
-import Control.Monad.Except ( throwError )
-
--- neat-interpolation ------------------
-
-import NeatInterpolation ( trimming )
 
 -- optparse-applicative ----------------
 
 import Options.Applicative ( Parser, argument, flag', help, long, metavar,
                              short )
 
--- safe-exceptions ---------------------
-
-import Control.Exception      qualified as Exception
-import Control.Exception.Safe ( try )
-
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple qualified as SQLite
-
-import Database.SQLite.Simple         ( Connection, FormatError, FromRow,
-                                        NamedParam((:=)), Only(Only), Query,
-                                        SQLData, SQLError, executeNamed, open,
-                                        queryNamed, query_ )
+import Database.SQLite.Simple         ( Connection, FromRow, NamedParam((:=)),
+                                        Only(Only), Query, SQLData,
+                                        executeNamed, open, queryNamed, query_ )
 import Database.SQLite.Simple.ToField ( ToField(toField) )
 
 -- stdmain --------------------------------
 
 import StdMain            ( stdMain )
-import StdMain.UsageError ( AsUsageError, UsageFPIOTPError, throwUsageT )
+import StdMain.UsageError ( AsUsageError, throwUsageT )
 
 -- tagsoup -----------------------------
 
@@ -101,7 +78,7 @@ import Text.HTML.TagSoup ( Tag, parseTags )
 
 -- text --------------------------------
 
-import Data.Text ( intercalate, pack, unpack )
+import Data.Text ( intercalate, pack )
 
 -- text-printer ------------------------
 
@@ -120,8 +97,7 @@ import Brian.Entry       ( Entry, actresses, description, medium, parseEntries,
                            printEntry, recordNumber, tags, title )
 import Brian.ID          ( ID(ID, unID) )
 import Brian.SQLite      ( execute_ )
-import Brian.SQLiteError ( AsSQLiteError(_SQLiteError), UsageSQLiteFPIOTPError,
-                           toAsSQLiteError, toSQLiteError )
+import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError )
 
 --------------------------------------------------------------------------------
 
@@ -357,14 +333,13 @@ buildTables conn recreate mck = do
          [ Column "recordid"    CTypeInteger [PrimaryKey]
          , Column "tagid"       CTypeInteger ф
          ] mck
---  tags_table ← getTagsTable conn
---  parseEntries ts ≫ foldM_ (insertEntry conn) tags_table
 
-data CreateTables = CreateTables | CreateReCreateTables
+type SQLLog α ε = Connection → DoMock
+                → LoggingT (Log MockIOClass) (ExceptT ε IO) α
 
-data Options ε = Options { _dbFile :: File
-                         , _inputFile :: 𝕄 File
-                         , _createTables :: 𝕄 (Connection -> DoMock -> LoggingT (Log MockIOClass) (ExceptT ε IO) ())
+data Options ε = Options { _dbFile       :: File
+                         , _inputFile    :: 𝕄 File
+                         , _createTables :: 𝕄 (SQLLog () ε)
                          }
 
 dbFile ∷ Lens' (Options ε) File
@@ -380,17 +355,17 @@ createTables = lens _createTables (\ o c → o { _createTables = c })
 
 optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε) ⇒ Parser (Options ε)
 optionsParser =
-  let createTables = flag' (flip buildTables NoReCreateTables)
-                       (mconcat [ short 'C', long "create-tables"
-                                , help "create tables"
-                                ])
-      reCreateTables = flag' (flip buildTables ReCreateTables)
-                       (mconcat [ short 'R', long "re-create-tables"
-                                , help "delete and re-create tables"
-                                ])
+  let create_tables    = flag' (flip buildTables NoReCreateTables)
+                               (mconcat [ short 'C', long "create-tables"
+                                        , help "create tables"
+                                        ])
+      re_create_tables = flag' (flip buildTables ReCreateTables)
+                               (mconcat [ short 'R', long "re-create-tables"
+                                        , help "delete and re-create tables"
+                                        ])
   in  Options ⊳ (argument readM $ metavar "SQLITE-DB")
               ⊵ optional (argument readM $ metavar "INPUT-FILE")
-              ⊵ optional (createTables ∤ reCreateTables)
+              ⊵ optional (create_tables ∤ re_create_tables)
 
 doMain ∷ (AsIOError ε, AsTextualParseError ε, AsUsageError ε, AsSQLiteError ε) ⇒
          DoMock → (Options ε) → LoggingT (Log MockIOClass) (ExceptT ε IO) ()

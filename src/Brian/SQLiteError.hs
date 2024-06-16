@@ -15,18 +15,16 @@ import GHC.Generics  ( Generic )
 
 -- fpath -------------------------------
 
-import FPath.Error.FPathError ( AsFPathError(_FPathError), FPathError,
-                                FPathIOError )
+import FPath.Error.FPathError ( AsFPathError(_FPathError) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( FormatError,
+import Database.SQLite.Simple ( FormatError(fmtMessage, fmtParams, fmtQuery),
                                 SQLError(sqlErrorContext, sqlErrorDetails) )
 
 -- stdmain --------------------------------
 
-import StdMain.UsageError ( AsUsageError(_UsageError), UsageError,
-                            UsageFPIOTPError, UsageFPathIOError )
+import StdMain.UsageError ( AsUsageError(_UsageError) )
 
 -- text-printer ------------------------
 
@@ -34,8 +32,7 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus.Error.TextualParseError ( AsTextualParseError(_TextualParseError),
-                                             TextualParseError )
+import TextualPlus.Error.TextualParseError ( AsTextualParseError(_TextualParseError) )
 
 --------------------------------------------------------------------------------
 
@@ -64,8 +61,8 @@ instance HasCallstack SQLiteError where
   callstack = lens (\ case (SQLE_SQLError _ cs)    → cs
                            (SQLE_FormatError _ cs) → cs)
                    (\ e cs →
-                      case e of (SQLE_SQLError e _)    → (SQLE_SQLError e cs)
-                                (SQLE_FormatError e _) → (SQLE_FormatError e cs)
+                      case e of (SQLE_SQLError f _)    → (SQLE_SQLError f cs)
+                                (SQLE_FormatError f _) → (SQLE_FormatError f cs)
                    )
 
 ----------------------------------------
@@ -99,6 +96,8 @@ instance AsSQLiteError SQLiteError where
 instance Printable SQLiteError where
   print (SQLE_SQLError e _) =
     P.text $ [fmt|%t [%t]|] (sqlErrorDetails e) (sqlErrorContext e)
+  print (SQLE_FormatError e _) =
+    P.text $ [fmt|%s: %w [%L]|] (fmtMessage e) (fmtQuery e) (fmtParams e)
 
 ------------------------------------------------------------
 
