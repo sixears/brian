@@ -12,7 +12,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
 import Data.Function       ( flip )
-import Data.List           ( drop, filter, maximum, zip )
+import Data.List           ( drop, maximum, zip )
 import Data.List.NonEmpty  ( nonEmpty )
 import Data.Monoid         ( mconcat )
 import GHC.Exts            ( IsList(toList), IsString(fromString) )
@@ -44,7 +44,7 @@ import Log ( Log, infoT )
 
 -- logging-effect ----------------------
 
-import Control.Monad.Log ( LoggingT, MonadLog, Severity(Debug, Informational) )
+import Control.Monad.Log ( LoggingT, MonadLog, Severity(Debug) )
 
 -- mockio-log --------------------------
 
@@ -78,11 +78,7 @@ import Text.HTML.TagSoup ( Tag, parseTags )
 
 -- text --------------------------------
 
-import Data.Text ( intercalate, pack )
-
--- text-printer ------------------------
-
-import Text.Printer qualified as P
+import Data.Text ( pack )
 
 -- textual-plus ------------------------
 
@@ -96,7 +92,10 @@ import Brian.BTag        ( BTag, unBTags )
 import Brian.Entry       ( Entry, actresses, description, medium, parseEntries,
                            printEntry, recordNumber, tags, title )
 import Brian.ID          ( ID(ID, unID) )
-import Brian.SQLite      ( execute_ )
+import Brian.SQLite      ( Column(Column), ColumnFlag(FlagUnique, PrimaryKey),
+                           ColumnName, ColumnType(CTypeInteger, CTypeText),
+                           Table, TableFlag(ForeignKey, OkayIfExists), columnID,
+                           createTable, execute_, reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError )
 
 --------------------------------------------------------------------------------
@@ -108,84 +107,6 @@ openURL' x t = let content_type = "application/x-www-form-urlencoded"
 
 brian ∷ MonadIO μ ⇒ μ String
 brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
-
-data ColumnType = CTypeText | CTypeInteger
-instance Printable ColumnType where
-  print CTypeText    = P.text "TEXT"
-  print CTypeInteger = P.text "INTEGER"
-
-data ColumnFlag = PrimaryKey | FlagUnique
-
-instance Printable ColumnFlag where
-  print PrimaryKey = P.text "PRIMARY KEY"
-  print FlagUnique = P.text "UNIQUE"
-
-data Column = Column { cname  :: ColumnName
-                     , ctype  :: ColumnType
-                     , cflags :: [ColumnFlag]
-                     }
-
-data TableFlag = OkayIfExists
-               | ForeignKey [ColumnName]
-  deriving (Eq, Show)
-
-instance Printable Column where
-  print (Column { cname, ctype, cflags }) =
-    let flags = ю $ (" " ⊕) ∘ toText ⊳ cflags
-    in  P.text $ [fmt|%T %T %t|] cname ctype flags
-
-
---  in  (SQLite.execute_ conn sql) `catches` handlers
-
-
--- createTable ∷ MonadIO μ ⇒ Connection → μ ()
-createTable ∷ ∀ ε ω μ .
-              (MonadIO μ, AsSQLiteError ε, MonadError ε μ,
-               MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-              Connection → 𝕋 → [TableFlag] → [Column] → DoMock → μ ()
-createTable conn tname tflags cols mck =
-  let exists = if OkayIfExists ∈ tflags then "IF NOT EXISTS " else ""
-      columns = intercalate ", " $ toText ⊳ cols
-      sql = fromString $ [fmt|CREATE TABLE %t%t (%t)|] exists tname columns
-  in  execute_ Informational conn sql mck
-
-reCreateTable ∷ ∀ ε ω μ .
-                (MonadIO μ, AsSQLiteError ε, MonadError ε μ,
-                 MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-                Connection → 𝕋 → [TableFlag] → [Column] → DoMock → μ ()
-reCreateTable conn tname tflags cols mck = do
-  execute_ Informational conn (fromString $ [fmt|DROP TABLE %T|] tname) mck
-  createTable conn tname (filter (≢ OkayIfExists) tflags) cols mck
--- create table tagref ( recordid INTEGER, tagid INTEGER ) FOREIGN KEY( recordid ) REFERENCES Records(id), FOREIGN KEY (tagid) REFERENCES Tags(Id)
--- create table tags ( id INTEGER PRIMARY KEY, tag TEXT UNIQUE )
-{-
-makeTable ∷ MonadIO μ ⇒ Connection → μ ()
-makeTable conn = liftIO $ do
-  -- CR mpearce: it would be nice if we had a direct qq for Query
-  let sql = fromString $ unpack [trimming|
-              CREATE TABLE IF NOT EXISTS Records
-                ( id          INTEGER PRIMARY KEY
-                , title       TEXT
-                , medium      TEXT
-                , actresses   TEXT
-                , tags        TEXT
-                , description TEXT)
-            |]
-  execute_ conn sql
--}
-
-newtype Table = Table { unTable :: 𝕋 }
-  deriving newtype (IsString, Show)
-
-instance Printable Table where print = P.text ∘ unTable
-
-newtype ColumnName = ColumnName { unColumnName :: 𝕋 }
-  deriving newtype (Eq, IsString, Ord, Show)
-
-instance Printable ColumnName where print = P.text ∘ unColumnName
-
-columnID ∷ ColumnName → 𝕋
-columnID = (":"⊕) ∘ unColumnName
 
 infix 5 ~
 (~) ∷ ToField τ ⇒ ColumnName → τ → (ColumnName,SQLData)
