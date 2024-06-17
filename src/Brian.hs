@@ -38,13 +38,13 @@ import Network.HTTP ( getResponseBody, postRequestWithBody, simpleHTTP )
 import Control.Lens.Getter  ( view )
 import Control.Lens.Indexed ( itoList )
 
--- logs-plus ---------------------------
-
-import Log ( Log, infoT )
-
 -- logging-effect ----------------------
 
 import Control.Monad.Log ( LoggingT, MonadLog, Severity(Debug) )
+
+-- logs-plus ---------------------------
+
+import Log ( Log, infoT )
 
 -- mockio-log --------------------------
 
