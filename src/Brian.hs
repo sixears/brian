@@ -7,21 +7,11 @@ import Base1T
 
 -- base --------------------------------
 
-import Data.List.NonEmpty qualified as NonEmpty
-
 import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
 import Data.Function       ( flip )
-import Data.List           ( drop, maximum, zip )
-import Data.List.NonEmpty  ( nonEmpty )
 import Data.Monoid         ( mconcat )
-import GHC.Exts            ( IsList(toList), IsString(fromString) )
 import System.Environment  ( getArgs )
-
--- containers --------------------------
-
-import Data.Map.Strict qualified as Map
-import Data.Set        qualified as Set
 
 -- fpath -------------------------------
 
@@ -33,18 +23,13 @@ import FPath.RelFile   ( relfile )
 
 import Network.HTTP ( getResponseBody, postRequestWithBody, simpleHTTP )
 
--- lens --------------------------------
-
-import Control.Lens.Getter  ( view )
-import Control.Lens.Indexed ( itoList )
-
 -- logging-effect ----------------------
 
-import Control.Monad.Log ( LoggingT, MonadLog, Severity(Debug) )
+import Control.Monad.Log ( LoggingT, MonadLog )
 
 -- logs-plus ---------------------------
 
-import Log ( Log, infoT )
+import Log ( Log )
 
 -- mockio-log --------------------------
 
@@ -62,10 +47,7 @@ import Options.Applicative ( Parser, argument, flag', help, long, metavar,
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple         ( Connection, FromRow, NamedParam((:=)),
-                                        Only(Only), Query, SQLData,
-                                        executeNamed, open, queryNamed, query_ )
-import Database.SQLite.Simple.ToField ( ToField(toField) )
+import Database.SQLite.Simple ( Connection, open )
 
 -- stdmain --------------------------------
 
@@ -88,15 +70,12 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag        ( BTag, unBTags )
-import Brian.Entry       ( Entry, actresses, description, medium, parseEntries,
-                           printEntry, recordNumber, tags, title )
-import Brian.EntryData   ()
-import Brian.ID          ( ID(ID, unID) )
+import Brian.Entry       ( parseEntries, printEntry )
+import Brian.EntryData   ( getTagsTable, insertEntry )
 import Brian.SQLite      ( Column(Column), ColumnFlag(FlagUnique, PrimaryKey),
-                           ColumnName, ColumnType(CTypeInteger, CTypeText),
-                           Table, TableFlag(ForeignKey, OkayIfExists), columnID,
-                           createTable, execute_, reCreateTable )
+                           ColumnType(CTypeInteger, CTypeText),
+                           TableFlag(ForeignKey, OkayIfExists), createTable,
+                           reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError )
 
 --------------------------------------------------------------------------------
@@ -108,10 +87,6 @@ openURL' x t = let content_type = "application/x-www-form-urlencoded"
 
 brian ∷ MonadIO μ ⇒ μ String
 brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
-
-infix 5 ~
-(~) ∷ ToField τ ⇒ ColumnName → τ → (ColumnName,SQLData)
-a ~ b = (a, toField b)
 
 data ReCreateTables = ReCreateTables | NoReCreateTables
 
