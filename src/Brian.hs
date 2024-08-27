@@ -9,8 +9,6 @@ import Base1T
 
 import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
-import Data.Function       ( flip )
-import Data.Monoid         ( mconcat )
 import System.Environment  ( getArgs )
 
 -- fpath -------------------------------
@@ -25,7 +23,7 @@ import Network.HTTP ( getResponseBody, postRequestWithBody, simpleHTTP )
 
 -- logging-effect ----------------------
 
-import Control.Monad.Log ( LoggingT, MonadLog )
+import Control.Monad.Log ( LoggingT, MonadLog, Severity(Informational) )
 
 -- logs-plus ---------------------------
 
@@ -42,8 +40,8 @@ import MonadIO.OpenFile ( readFileUTF8Lenient )
 
 -- optparse-applicative ----------------
 
-import Options.Applicative ( Parser, argument, flag', help, long, metavar,
-                             short )
+import Options.Applicative ( CommandFields, Mod, Parser, argument, command,
+                             info, metavar, progDesc, subparser )
 
 -- sqlite-simple -----------------------
 
@@ -60,7 +58,8 @@ import Text.HTML.TagSoup ( Tag, parseTags )
 
 -- text --------------------------------
 
-import Data.Text ( pack )
+import Data.Text    ( pack )
+import Data.Text.IO qualified as TextIO
 
 -- textual-plus ------------------------
 
@@ -70,12 +69,12 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Entry       ( parseEntries, printEntry )
+import Brian.Entry       ( entryTable, parseEntries, printEntry )
 import Brian.EntryData   ( getTagsTable, insertEntry )
 import Brian.SQLite      ( Column(Column), ColumnFlag(FlagUnique, PrimaryKey),
-                           ColumnType(CTypeInteger, CTypeText),
+                           ColumnType(CTypeInteger, CTypeText), Table(Table),
                            TableFlag(ForeignKey, OkayIfExists), createTable,
-                           reCreateTable )
+                           fold, reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError )
 
 --------------------------------------------------------------------------------
@@ -91,37 +90,34 @@ brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
 data ReCreateTables = ReCreateTables | NoReCreateTables
 
 buildTables ∷ ∀ ε ω μ .
-              (MonadIO μ, AsSQLiteError ε, AsTextualParseError ε,MonadError ε μ,
+              (MonadIO μ,
+               AsSQLiteError ε,AsTextualParseError ε,Printable ε,MonadError ε μ,
                MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
               Connection → ReCreateTables → DoMock → μ ()
 buildTables conn recreate mck = do
   let create = case recreate of
                  ReCreateTables   → reCreateTable
                  NoReCreateTables → createTable
-  create conn "Records" [ OkayIfExists ]
-         [ Column "id"          CTypeInteger [PrimaryKey]
-         , Column "title"       CTypeText    ф
-         , Column "medium"      CTypeText    ф
-         , Column "actresses"   CTypeText    ф
-         , Column "tags"        CTypeText    ф
-         , Column "description" CTypeText    ф
-         ] mck
-  create conn "Tags" [ OkayIfExists ]
+  create conn entryTable mck
+  create conn (Table "Tag" [ OkayIfExists ]
          [ Column "id"          CTypeInteger [PrimaryKey]
          , Column "tag"         CTypeText    [FlagUnique]
-         ] mck
-  create conn "TagRef" [ OkayIfExists, ForeignKey ["recordid"] ]
-         [ Column "recordid"    CTypeInteger [PrimaryKey]
+         ]) mck
+  create conn (Table "TagRef" [ OkayIfExists, ForeignKey ["recordid"] ]
+         [ Column "recordid"    CTypeInteger ф
          , Column "tagid"       CTypeInteger ф
-         ] mck
+         ]) mck
 
-type SQLLog α ε = Connection → DoMock
-                → LoggingT (Log MockIOClass) (ExceptT ε IO) α
+data Mode = ModeCreate | ModeReCreate | ModeQuery
 
-data Options ε = Options { _dbFile       :: File
-                         , _inputFile    :: 𝕄 File
-                         , _createTables :: 𝕄 (SQLLog () ε)
+data Options ε = Options { _mode      :: Mode
+                         , _dbFile    :: File
+                         , _inputFile :: 𝕄 File
+                           --                         , _createTables :: 𝕄 (SQLLog () ε)
                          }
+
+mode ∷ Lens' (Options ε) Mode
+mode = lens _mode (\ o m → o { _mode = m })
 
 dbFile ∷ Lens' (Options ε) File
 dbFile = lens _dbFile (\ o f → o { _dbFile = f })
@@ -129,26 +125,25 @@ dbFile = lens _dbFile (\ o f → o { _dbFile = f })
 inputFile ∷ Lens' (Options ε) (𝕄 File)
 inputFile = lens _inputFile (\ o f → o { _inputFile = f })
 
-createTables ∷
-  Lens' (Options ε)
-        (𝕄 (Connection → DoMock → LoggingT (Log MockIOClass) (ExceptT ε IO) ()))
-createTables = lens _createTables (\ o c → o { _createTables = c })
-
-optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε) ⇒ Parser (Options ε)
+optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε, Printable ε) ⇒
+                Parser (Options ε)
 optionsParser =
-  let create_tables    = flag' (flip buildTables NoReCreateTables)
-                               (mconcat [ short 'C', long "create-tables"
-                                        , help "create tables"
-                                        ])
-      re_create_tables = flag' (flip buildTables ReCreateTables)
-                               (mconcat [ short 'R', long "re-create-tables"
-                                        , help "delete and re-create tables"
-                                        ])
-  in  Options ⊳ (argument readM $ metavar "SQLITE-DB")
+  let mode_commands ∷ [Mod CommandFields Mode] =
+        [ command "create"
+                  (info (pure ModeCreate) (progDesc "build a new database"))
+        , command "recreate"
+                  (info (pure ModeReCreate) (progDesc "rebuild a database"))
+        , command "query"
+                  (info (pure ModeQuery) (progDesc "query the database"))
+        ]
+  in  Options ⊳ subparser (ю mode_commands)
+              ⊵ argument readM (metavar "SQLITE-DB")
               ⊵ optional (argument readM $ metavar "INPUT-FILE")
-              ⊵ optional (create_tables ∤ re_create_tables)
 
-doMain ∷ (AsIOError ε, AsTextualParseError ε, AsUsageError ε, AsSQLiteError ε) ⇒
+----------------------------------------
+
+doMain ∷ (AsIOError ε, AsTextualParseError ε, AsUsageError ε, AsSQLiteError ε,
+          Printable ε) ⇒
          DoMock → (Options ε) → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
 doMain mck opts = do
   case mck of
@@ -167,12 +162,14 @@ doMain mck opts = do
   case conn of
     𝕹   → parseEntries ts ≫ mapM_ printEntry
     𝕵 c → do
-      case opts ⊣ createTables of
-        𝕹        → return ()
-        𝕵 create → create c mck
+      case opts ⊣ mode of
+        ModeCreate   → buildTables c NoReCreateTables mck
+        ModeReCreate → buildTables c ReCreateTables   mck
+        ModeQuery    → fold @_ @_ @(ℤ,𝕋) @_ Informational c "SELECT id,title FROM Entry" () () (\ () (eid,title) → TextIO.putStrLn $ [fmt|%d - %t|] eid title ) () mck
       tags_table ← getTagsTable c
       parseEntries ts ≫ foldM_ (\ tgs e → insertEntry c tgs e mck) tags_table
 
+----------------------------------------
 
 main ∷ IO ()
 main =

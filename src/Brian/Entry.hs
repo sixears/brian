@@ -3,6 +3,7 @@ module Brian.Entry
   ( Entry
   , actresses
   , description
+  , entryTable
   , medium
   , parseEntries
   , printEntry
@@ -28,7 +29,8 @@ import Text.Parser.Combinators ( eof, sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( ToRow(toRow) )
+import Database.SQLite.Simple         ( ToRow(toRow) )
+import Database.SQLite.Simple.ToField ( ToField(toField) )
 
 -- tagsoup -----------------------------
 
@@ -71,10 +73,22 @@ import Brian.Description ( Description(Description), more )
 import Brian.ID          ( ID(ID), toℤ )
 import Brian.Medium      ( Medium(Movie, SoapOpera) )
 import Brian.Parsers     ( whitespace )
+import Brian.SQLite      ( Column(Column), ColumnFlag(PrimaryKey),
+                           ColumnType(CTypeInteger, CTypeText), Table(Table),
+                           TableFlag(OkayIfExists) )
 import Brian.TagSoup     ( text, (≈), (≉) )
 import Brian.Title       ( Title, unTitle )
 
 --------------------------------------------------------------------------------
+
+entryTable ∷ Table
+entryTable = Table "Entry" [ OkayIfExists ]
+         [ Column "id"          CTypeInteger [PrimaryKey]
+         , Column "title"       CTypeText    ф
+         , Column "medium"      CTypeText    ф
+         , Column "actresses"   CTypeText    ф
+         , Column "description" CTypeText    ф
+         ]
 
 data Entry = Entry { _recordNumber :: ID
                    , _title        :: Title
@@ -86,7 +100,12 @@ data Entry = Entry { _recordNumber :: ID
   deriving (Eq, Show)
 
 instance ToRow Entry where
-  toRow e = toRow (e ⊣ recordNumber, unTitle $ e ⊣ title)
+  toRow e = toRow ( e ⊣ recordNumber
+                  , unTitle $ e ⊣ title
+                  , e ⊣ medium
+                  , toField (e ⊣ actresses)
+                  , toField (e ⊣ description)
+                  )
 
 recordNumber ∷ Lens' Entry ID
 recordNumber = lens _recordNumber (\ e n → e { _recordNumber = n })

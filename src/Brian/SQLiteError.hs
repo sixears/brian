@@ -1,6 +1,8 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.SQLiteError
   ( AsSQLiteError(_SQLiteError)
+  , SQLiteError
+  , SQuError
   , UsageSQLiteFPIOTPError
   , toAsSQLiteError
   , toSQLiteError
@@ -19,7 +21,10 @@ import FPath.Error.FPathError ( AsFPathError(_FPathError) )
 
 -- sqlite-simple -----------------------
 
+import Database.SQLite.Simple qualified as SQLite
+
 import Database.SQLite.Simple ( FormatError(fmtMessage, fmtParams, fmtQuery),
+                                ResultError(errHaskellType, errMessage, errSQLType),
                                 SQLError(sqlErrorContext, sqlErrorDetails) )
 
 -- stdmain --------------------------------
@@ -36,10 +41,24 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError(_TextualParseEr
 
 --------------------------------------------------------------------------------
 
+{- | A wrapper to allow declaring SQLite.Error as an Exception -}
+newtype SQuError = SQuError SQLite.Error
+  deriving (Show)
+
+instance Exception SQuError
+
+------------------------------------------------------------
+
 data SQLiteError = SQLE_SQLError { _sqlError       :: SQLError
                                  , _callstack_sqle :: CallStack
                                  }
                  | SQLE_FormatError { _formatError    :: FormatError
+                                    , _callstack_fmte :: CallStack
+                                    }
+                 | SQLE_Error { _Error          :: SQuError
+                              , _callstack_fmte :: CallStack
+                              }
+                 | SQLE_ResultError { _resultError    :: ResultError
                                     , _callstack_fmte :: CallStack
                                     }
   deriving (Generic, Show)
@@ -59,10 +78,15 @@ instance Eq SQLiteError where
 
 instance HasCallstack SQLiteError where
   callstack = lens (\ case (SQLE_SQLError _ cs)    → cs
-                           (SQLE_FormatError _ cs) → cs)
+                           (SQLE_FormatError _ cs) → cs
+                           (SQLE_Error _ cs)       → cs
+                           (SQLE_ResultError _ cs) → cs
+                   )
                    (\ e cs →
                       case e of (SQLE_SQLError f _)    → (SQLE_SQLError f cs)
                                 (SQLE_FormatError f _) → (SQLE_FormatError f cs)
+                                (SQLE_Error f _) → (SQLE_Error f cs)
+                                (SQLE_ResultError f _) → (SQLE_ResultError f cs)
                    )
 
 ----------------------------------------
@@ -77,6 +101,12 @@ instance ToSQLiteError SQLError where
 
 instance ToSQLiteError FormatError where
   toSQLiteError = flip SQLE_FormatError callStack
+
+instance ToSQLiteError SQuError where
+  toSQLiteError = flip SQLE_Error callStack
+
+instance ToSQLiteError ResultError where
+  toSQLiteError = flip SQLE_ResultError callStack
 
 
 
@@ -95,9 +125,14 @@ instance AsSQLiteError SQLiteError where
 
 instance Printable SQLiteError where
   print (SQLE_SQLError e _) =
-    P.text $ [fmt|%t [%t]|] (sqlErrorDetails e) (sqlErrorContext e)
+    P.text $ [fmt|¡SQLError! %t [%t]|] (sqlErrorDetails e) (sqlErrorContext e)
   print (SQLE_FormatError e _) =
-    P.text $ [fmt|%s: %w [%L]|] (fmtMessage e) (fmtQuery e) (fmtParams e)
+    P.text $ [fmt|¡FormatError! %s: %w [%L]|] (fmtMessage e) (fmtQuery e) (fmtParams e)
+  print (SQLE_ResultError e _) =
+    P.text $ [fmt|¡ResultError! %s/%s (%s)|]
+                 (errSQLType e) (errHaskellType e) (errMessage e)
+  print (SQLE_Error e _) =
+    P.text $ [fmt|¡SQLite.Error! %w|] e
 
 ------------------------------------------------------------
 
