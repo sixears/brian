@@ -17,11 +17,12 @@ import Text.Parser.Combinators ( sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple.ToField ( ToField(toField) )
+import Database.SQLite.Simple.FromField ( FromField(fromField) )
+import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- text --------------------------------
 
-import Data.Text ( intercalate, pack )
+import Data.Text qualified as Text
 
 -- text-printer ------------------------
 
@@ -42,12 +43,18 @@ instance IsList Actresses where
   toList = unActresses
 
 instance Printable Actresses where
-  print = P.text ∘ intercalate ", " ∘ unActresses
+  print = P.text ∘ Text.intercalate ", " ∘ unActresses
 
 instance TextualPlus Actresses where
-  textual' = Actresses ⊳ (pack ⊳ some (noneOf ",\n")) `sepBy` (char ',' ⋪ many (char ' ')) <?> "Actresses"
+  textual' =
+    Actresses ⊳         (Text.pack ⊳ some (noneOf ",\n"))
+                `sepBy` (char ',' ⋪ many (char ' '))
+             <?> "Actresses"
 
 instance ToField Actresses where
-  toField = toField ∘ intercalate ", " ∘ unActresses
+  toField = toField ∘ Text.intercalate ", " ∘ unActresses
+
+instance FromField Actresses where
+  fromField = Actresses ∘ Text.splitOn ", " ⩺ fromField
 
 -- that's all, folks! ----------------------------------------------------------

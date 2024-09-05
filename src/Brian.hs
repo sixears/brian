@@ -36,6 +36,7 @@ import MockIO.Log     ( DoMock(DoMock, NoMock), HasDoMock, MockIOClass )
 
 -- monadio-plus ------------------------
 
+import MonadIO          ( say )
 import MonadIO.OpenFile ( readFileUTF8Lenient )
 
 -- optparse-applicative ----------------
@@ -45,7 +46,7 @@ import Options.Applicative ( CommandFields, Mod, Parser, argument, command,
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, open )
+import Database.SQLite.Simple ( Connection, Only(Only), open )
 
 -- stdmain --------------------------------
 
@@ -58,8 +59,7 @@ import Text.HTML.TagSoup ( Tag, parseTags )
 
 -- text --------------------------------
 
-import Data.Text    ( pack )
-import Data.Text.IO qualified as TextIO
+import Data.Text ( pack )
 
 -- textual-plus ------------------------
 
@@ -70,12 +70,14 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 ------------------------------------------------------------
 
 import Brian.Entry       ( entryTable, parseEntries, printEntry )
-import Brian.EntryData   ( getTagsTable, insertEntry )
+import Brian.EntryData   ( getTagsTable, insertEntry, readEntry )
+import Brian.ID          ( ID(ID) )
 import Brian.SQLite      ( Column(Column), ColumnFlag(FlagUnique, PrimaryKey),
                            ColumnType(CTypeInteger, CTypeText), Table(Table),
                            TableFlag(ForeignKey, OkayIfExists), createTable,
-                           fold, reCreateTable )
-import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError )
+                           query_, reCreateTable )
+import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError,
+                           throwSQLMiscError )
 
 --------------------------------------------------------------------------------
 
@@ -113,7 +115,6 @@ data Mode = ModeCreate | ModeReCreate | ModeQuery
 data Options ε = Options { _mode      :: Mode
                          , _dbFile    :: File
                          , _inputFile :: 𝕄 File
-                           --                         , _createTables :: 𝕄 (SQLLog () ε)
                          }
 
 mode ∷ Lens' (Options ε) Mode
@@ -142,6 +143,28 @@ optionsParser =
 
 ----------------------------------------
 
+dumpEntry ∷ ∀ ε ω μ .
+            (MonadIO μ, Default ω, MonadLog (Log ω) μ,
+             AsSQLiteError ε, Printable ε, MonadError ε μ,
+             MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
+            Connection → DoMock → (Only ℤ) → μ ()
+dumpEntry c mck (Only eid) = do
+  e ← readEntry c (ID $ fromIntegral eid) mck
+  case e of
+    𝕵 e' → say $ [fmtT|%T\n\n----|] e'
+    𝕹    → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
+
+
+queryEntries ∷ (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
+                HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
+               Connection → DoMock → μ ()
+queryEntries c mck = do
+  let sql = "SELECT id FROM Entry"
+  eids ← query_ Informational c sql [] mck
+  forM_ eids (dumpEntry c mck)
+
+----------------------------------------
+
 doMain ∷ (AsIOError ε, AsTextualParseError ε, AsUsageError ε, AsSQLiteError ε,
           Printable ε) ⇒
          DoMock → (Options ε) → LoggingT (Log MockIOClass) (ExceptT ε IO) ()
@@ -162,12 +185,15 @@ doMain mck opts = do
   case conn of
     𝕹   → parseEntries ts ≫ mapM_ printEntry
     𝕵 c → do
+      let build cnn recreate mock = do
+            buildTables cnn recreate mock
+            tags_table ← getTagsTable cnn
+            let go tgs e = insertEntry c tgs e mock
+            parseEntries ts ≫ foldM_ go tags_table
       case opts ⊣ mode of
-        ModeCreate   → buildTables c NoReCreateTables mck
-        ModeReCreate → buildTables c ReCreateTables   mck
-        ModeQuery    → fold @_ @_ @(ℤ,𝕋) @_ Informational c "SELECT id,title FROM Entry" () () (\ () (eid,title) → TextIO.putStrLn $ [fmt|%d - %t|] eid title ) () mck
-      tags_table ← getTagsTable c
-      parseEntries ts ≫ foldM_ (\ tgs e → insertEntry c tgs e mck) tags_table
+        ModeCreate   → build c NoReCreateTables mck
+        ModeReCreate → build c ReCreateTables   mck
+        ModeQuery    → queryEntries c mck
 
 ----------------------------------------
 

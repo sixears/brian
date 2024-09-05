@@ -1,6 +1,6 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.Entry
-  ( Entry
+  ( Entry(Entry)
   , actresses
   , description
   , entryTable

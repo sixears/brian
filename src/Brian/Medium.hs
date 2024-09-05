@@ -5,6 +5,10 @@ module Brian.Medium
 
 import Base1T
 
+-- base --------------------------------
+
+import Control.Exception ( toException )
+
 -- parsers -----------------------------
 
 import Text.Parser.Char        ( anyChar, string )
@@ -12,7 +16,9 @@ import Text.Parser.Combinators ( choice, unexpected, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple.ToField ( ToField(toField) )
+import Database.SQLite.Simple.FromField ( FromField(fromField) )
+import Database.SQLite.Simple.Ok        ( Ok(Errors, Ok) )
+import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- text-printer ------------------------
 
@@ -50,4 +56,15 @@ instance TextualPlus Medium where
 instance ToField Medium where
   toField m = toField (toText m)
 
+newtype MyException = MyException 𝕋
+  deriving (Show)
+instance Exception MyException
+
+instance FromField Medium where
+  fromField f = case fromField f of
+                  Ok "TV Movie"   → Ok TVMovie
+                  Ok "TV Series"  → Ok TVSeries
+                  Ok "Soap Opera" → Ok SoapOpera
+                  Ok e            → Errors [toException $ MyException e]
+                  Errors e        → Errors e
 -- that's all, folks! ----------------------------------------------------------

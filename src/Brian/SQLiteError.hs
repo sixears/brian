@@ -4,6 +4,8 @@ module Brian.SQLiteError
   , SQLiteError
   , SQuError
   , UsageSQLiteFPIOTPError
+  , sqlMiscError
+  , throwSQLMiscError
   , toAsSQLiteError
   , toSQLiteError
   ) where
@@ -49,18 +51,21 @@ instance Exception SQuError
 
 ------------------------------------------------------------
 
-data SQLiteError = SQLE_SQLError { _sqlError       :: SQLError
-                                 , _callstack_sqle :: CallStack
+data SQLiteError = SQLE_SQLError { _sqlError  :: SQLError
+                                 , _callstack :: CallStack
                                  }
-                 | SQLE_FormatError { _formatError    :: FormatError
-                                    , _callstack_fmte :: CallStack
+                 | SQLE_FormatError { _formatError :: FormatError
+                                    , _callstack   :: CallStack
                                     }
-                 | SQLE_Error { _Error          :: SQuError
-                              , _callstack_fmte :: CallStack
+                 | SQLE_Error { _Error     :: SQuError
+                              , _callstack :: CallStack
                               }
-                 | SQLE_ResultError { _resultError    :: ResultError
-                                    , _callstack_fmte :: CallStack
+                 | SQLE_ResultError { _resultError :: ResultError
+                                    , _callstack   :: CallStack
                                     }
+                 | SQLE_MiscError { _txtError  :: 𝕋
+                                  , _callstack :: CallStack
+                                  }
   deriving (Generic, Show)
 
 --------------------
@@ -77,16 +82,18 @@ instance Eq SQLiteError where
 --------------------
 
 instance HasCallstack SQLiteError where
-  callstack = lens (\ case (SQLE_SQLError _ cs)    → cs
+  callstack = lens (\ case (SQLE_SQLError    _ cs) → cs
                            (SQLE_FormatError _ cs) → cs
-                           (SQLE_Error _ cs)       → cs
+                           (SQLE_Error       _ cs) → cs
                            (SQLE_ResultError _ cs) → cs
+                           (SQLE_MiscError   _ cs) → cs
                    )
                    (\ e cs →
-                      case e of (SQLE_SQLError f _)    → (SQLE_SQLError f cs)
+                      case e of (SQLE_SQLError    f _) → (SQLE_SQLError    f cs)
                                 (SQLE_FormatError f _) → (SQLE_FormatError f cs)
-                                (SQLE_Error f _) → (SQLE_Error f cs)
+                                (SQLE_Error       f _) → (SQLE_Error       f cs)
                                 (SQLE_ResultError f _) → (SQLE_ResultError f cs)
+                                (SQLE_MiscError   f _) → (SQLE_MiscError   f cs)
                    )
 
 ----------------------------------------
@@ -108,8 +115,6 @@ instance ToSQLiteError SQuError where
 instance ToSQLiteError ResultError where
   toSQLiteError = flip SQLE_ResultError callStack
 
-
-
 ------------------------------------------------------------
 
 {-| prisms including @SQLiteError -}
@@ -128,11 +133,13 @@ instance Printable SQLiteError where
     P.text $ [fmt|¡SQLError! %t [%t]|] (sqlErrorDetails e) (sqlErrorContext e)
   print (SQLE_FormatError e _) =
     P.text $ [fmt|¡FormatError! %s: %w [%L]|] (fmtMessage e) (fmtQuery e) (fmtParams e)
+  print (SQLE_Error e _) =
+    P.text $ [fmt|¡SQLite.Error! %w|] e
   print (SQLE_ResultError e _) =
     P.text $ [fmt|¡ResultError! %s/%s (%s)|]
                  (errSQLType e) (errHaskellType e) (errMessage e)
-  print (SQLE_Error e _) =
-    P.text $ [fmt|¡SQLite.Error! %w|] e
+  print (SQLE_MiscError e _) =
+    P.text $ [fmt|¡SQLite.Error! %t|] e
 
 ------------------------------------------------------------
 
@@ -206,5 +213,14 @@ instance HasCallstack UsageSQLiteFPIOTPError where
         USFPIOTPE_UFPIOTPE_ERROR (e & callstack ⊢ cs)
     in
       lens getter setter
+
+----------------------------------------
+
+sqlMiscError ∷ ∀ τ ε . (Printable τ, AsSQLiteError ε, HasCallStack) ⇒ τ → ε
+sqlMiscError t = _SQLiteError # SQLE_MiscError (toText t) callStack
+
+throwSQLMiscError ∷ ∀ τ ε ω η .
+                    (Printable τ, AsSQLiteError ε, MonadError ε η) ⇒ τ → η ω
+throwSQLMiscError t = throwError $ sqlMiscError t
 
 -- that's all, folks! ----------------------------------------------------------

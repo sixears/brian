@@ -17,7 +17,8 @@ import Text.Parser.Combinators ( (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple.ToField ( ToField(toField) )
+import Database.SQLite.Simple.FromField ( FromField(fromField) )
+import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- text --------------------------------
 
@@ -37,5 +38,8 @@ instance TextualPlus Title where
 
 instance ToField Title where
   toField = toField ∘ unTitle
+
+instance FromField Title where
+  fromField = Title ⩺ fromField
 
 -- that's all, folks! ----------------------------------------------------------

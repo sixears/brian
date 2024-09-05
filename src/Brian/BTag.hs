@@ -1,7 +1,10 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.BTag
-  ( BTag
+  ( BTag(unBTag)
   , BTags(unBTags)
+  , TagsRow(TagsRow)
+  , btags
+  , tagsRows
   ) where
 
 import Base1T
@@ -18,8 +21,8 @@ import Text.Parser.Combinators ( sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
+import Database.SQLite.Simple           ( SQLData(SQLText), ToRow(toRow) )
 import Database.SQLite.Simple.FromField ( FromField(fromField) )
-import Database.SQLite.Simple.Ok        ( Ok(Errors, Ok) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- text --------------------------------
@@ -51,9 +54,9 @@ instance ToField BTag where
   toField = toField ∘ unBTag
 
 instance FromField BTag where
-  fromField f = case fromField f of
-    Ok t     → Ok $ BTag t
-    Errors x → Errors x
+  fromField = BTag ⩺ fromField
+
+------------------------------------------------------------
 
 newtype BTags = BTags { unBTags :: [BTag] }
   deriving (Show)
@@ -69,5 +72,16 @@ instance Printable BTags where
 
 instance TextualPlus BTags where
   textual' = (BTags ⊳ textual' `sepBy` some (oneOf " .,<>:;()")) <?> "BTags"
+
+btags ∷ [𝕋] → BTags
+btags ts = BTags $ BTag ⊳ ts
+
+data TagsRow = TagsRow BTag
+
+instance ToRow TagsRow where
+  toRow (TagsRow btag) = [SQLText $ unBTag btag]
+
+tagsRows ∷ BTags → [TagsRow]
+tagsRows = TagsRow ⩺ unBTags
 
 -- that's all, folks! ----------------------------------------------------------

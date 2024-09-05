@@ -2,7 +2,7 @@
 module Brian.SQLite
   ( Column(Column)
   , ColumnFlag(..)
-  , ColumnName
+  , ColumnName(..)
   , ColumnType(..)
   , Table(Table)
   , TableFlag(..)
@@ -13,6 +13,7 @@ module Brian.SQLite
   , fold
   , insertRow
   , query
+  , query_
   , reCreateTable
   ) where
 
@@ -153,8 +154,8 @@ execute_ sev conn sql =
 query ∷ ∀ ε ξ χ ω μ .
         (MonadIO μ, ToRow ξ, FromRow χ,
          AsSQLiteError ε, Printable ε, MonadError ε μ,
-         MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-          Severity → Connection → Query → ξ → [χ] → DoMock → μ [χ]
+         Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
+        Severity → Connection → Query → ξ → [χ] → DoMock → μ [χ]
 query sev conn sql r mock_value =
   let handlers = [ Exception.Handler $ return ∘ toAsSQLiteError @SQLError
                  , Exception.Handler $ return ∘ toAsSQLiteError @FormatError
@@ -166,6 +167,25 @@ query sev conn sql r mock_value =
 
 ----------------------------------------
 
+{- `query` that takes no parameters -}
+query_ ∷ ∀ ε χ ω μ .
+         (MonadIO μ, FromRow χ,
+          AsSQLiteError ε, Printable ε, MonadError ε μ,
+          MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
+         Severity → Connection → Query → [χ] → DoMock → μ [χ]
+query_ sev conn sql mock_value =
+  let handlers = [ Exception.Handler $ return ∘ toAsSQLiteError @SQLError
+                 , Exception.Handler $ return ∘ toAsSQLiteError @FormatError
+                 , Exception.Handler $ return ∘ toAsSQLiteError @SQuError
+                 , Exception.Handler $ return ∘ toAsSQLiteError @ResultError
+                 ]
+      io       = ((SQLite.query_ conn sql) `catches` handlers)
+  in  mkIOLME sev IOWrite ([fmtT|sqlqy %w|] sql) mock_value io
+
+----------------------------------------
+
+{- Fold doesn't perform multiple, e.g., inserts; it folds the potentially many
+   rows of results back to a single result. -}
 fold ∷ ∀ ε ξ χ α ω μ .
        (MonadIO μ, ToRow ξ, FromRow χ,
         AsSQLiteError ε, Printable ε, MonadError ε μ,
@@ -228,7 +248,8 @@ insertRow ∷ ∀ ε ξ χ ω μ .
             Severity → Connection → Table → 𝕄 𝕋 → ξ → [χ] → DoMock → μ [χ]
 insertRow sev conn t extra r =
   let sql = fromString $ [fmt|INSERT INTO %T (%L) VALUES (%L)%T|]
-                         (t ⊣ tname) (cname ⊳ t ⊣ tcols) ((const ("?"∷𝕋)) ⊳ t ⊣ tcols) (maybe "" (" " ⊕) extra)
+                         (t ⊣ tname) (cname ⊳ t ⊣ tcols)
+                         (const ("?"∷𝕋) ⊳ t ⊣ tcols) (maybe "" (" " ⊕) extra)
   in  query sev conn sql r
 
 -- that's all, folks! ----------------------------------------------------------
