@@ -2,7 +2,9 @@
 module Brian.BTag
   ( BTag(unBTag)
   , BTags(unBTags)
+  , TagRefTable
   , TagsRow(TagsRow)
+  , TagsTable
   , btags
   , tagsRows
   ) where
@@ -36,6 +38,16 @@ import Text.Printer qualified as P
 -- textual-plus ------------------------
 
 import TextualPlus ( TextualPlus(textual') )
+
+------------------------------------------------------------
+--                     local imports                      --
+------------------------------------------------------------
+
+import Brian.ID     ( ID )
+import Brian.SQLite ( ColumnDesc(ColumnDesc),
+                      ColumnFlag(FlagUnique, NoInsert, PrimaryKey),
+                      ColumnType(CTypeInteger, CTypeText),
+                      Table(columns, tName, type RowType) )
 
 --------------------------------------------------------------------------------
 
@@ -76,12 +88,40 @@ instance TextualPlus BTags where
 btags ∷ [𝕋] → BTags
 btags ts = BTags $ BTag ⊳ ts
 
-data TagsRow = TagsRow BTag
+------------------------------------------------------------
+
+newtype TagsRow = TagsRow BTag
 
 instance ToRow TagsRow where
   toRow (TagsRow btag) = [SQLText $ unBTag btag]
 
 tagsRows ∷ BTags → [TagsRow]
 tagsRows = TagsRow ⩺ unBTags
+
+------------------------------------------------------------
+
+data TagsTable
+
+instance Table TagsTable where
+  type instance RowType TagsTable = TagsRow
+  tName   _ = "Tag"
+  columns _ =    ColumnDesc "id" CTypeInteger [NoInsert,PrimaryKey]
+            :| [ ColumnDesc "tag" CTypeText [FlagUnique] ]
+
+------------------------------------------------------------
+
+data TagsRefRow = TagsRefRow ID ID
+
+instance ToRow TagsRefRow where
+  toRow (TagsRefRow recordid tagid) = [toField recordid, toField tagid]
+
+------------------------------------------------------------
+
+data TagRefTable
+
+instance Table TagRefTable where
+  type instance RowType TagRefTable = TagsRefRow
+  tName   _ = "TagRef"
+  columns _ = (ColumnDesc "recordid" CTypeInteger []) :| [ ColumnDesc "tagid" CTypeInteger [] ]
 
 -- that's all, folks! ----------------------------------------------------------

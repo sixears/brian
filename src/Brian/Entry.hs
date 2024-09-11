@@ -1,9 +1,10 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.Entry
   ( Entry(Entry)
+  , EntryRow
   , actresses
   , description
-  , entryTable
+  , entryRow
   , medium
   , parseEntries
   , printEntry
@@ -73,22 +74,10 @@ import Brian.Description ( Description(Description), more )
 import Brian.ID          ( ID(ID), toℤ )
 import Brian.Medium      ( Medium(Movie, SoapOpera) )
 import Brian.Parsers     ( whitespace )
-import Brian.SQLite      ( Column(Column), ColumnFlag(PrimaryKey),
-                           ColumnType(CTypeInteger, CTypeText), Table(Table),
-                           TableFlag(OkayIfExists) )
 import Brian.TagSoup     ( text, (≈), (≉) )
 import Brian.Title       ( Title, unTitle )
 
 --------------------------------------------------------------------------------
-
-entryTable ∷ Table
-entryTable = Table "Entry" [ OkayIfExists ]
-         [ Column "id"          CTypeInteger [PrimaryKey]
-         , Column "title"       CTypeText    ф
-         , Column "medium"      CTypeText    ф
-         , Column "actresses"   CTypeText    ф
-         , Column "description" CTypeText    ф
-         ]
 
 data Entry = Entry { _recordNumber :: ID
                    , _title        :: Title
@@ -98,6 +87,24 @@ data Entry = Entry { _recordNumber :: ID
                    , _description  :: Description
                    }
   deriving (Eq, Show)
+
+data EntryRow = EntryRow { _erRecordNumber :: ID
+                         , _erTitle        :: Title
+                         , _erMedium       :: 𝕄 Medium
+                         , _arActresses    :: Actresses
+                           -- , _tags         :: BTags
+                         , _erDescription  :: Description
+                         }
+
+entryRow ∷ Entry → EntryRow
+entryRow e = EntryRow (e ⊣ recordNumber)
+                  (e ⊣ title)
+                  (e ⊣ medium)
+                  (e ⊣ actresses)
+                  (e ⊣ description)
+
+instance ToRow EntryRow
+  where toRow (EntryRow rn tt md ac ds) = toRow (rn, unTitle tt, md, toField ac, toField ds)
 
 instance ToRow Entry where
   toRow e = toRow ( e ⊣ recordNumber

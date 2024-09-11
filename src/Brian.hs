@@ -9,6 +9,8 @@ import Base1T
 
 import Control.Applicative ( optional )
 import Control.Monad       ( foldM_, (=<<) )
+import Data.Function       ( flip )
+import Data.Proxy          ( Proxy(Proxy) )
 import System.Environment  ( getArgs )
 
 -- fpath -------------------------------
@@ -44,9 +46,13 @@ import MonadIO.OpenFile ( readFileUTF8Lenient )
 import Options.Applicative ( CommandFields, Mod, Parser, argument, command,
                              info, metavar, progDesc, subparser )
 
+-- safe-exceptions ---------------------
+
+import Control.Exception.Safe ( finally )
+
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, Only(Only), open )
+import Database.SQLite.Simple ( Connection, Only(Only), close, open )
 
 -- stdmain --------------------------------
 
@@ -69,11 +75,12 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Entry       ( entryTable, parseEntries, printEntry )
-import Brian.EntryData   ( getTagsTable, insertEntry, readEntry )
+import Brian.BTag        ( TagRefTable, TagsTable )
+import Brian.Entry       ( parseEntries, printEntry )
+import Brian.EntryData   ( EntryTable, insertEntry, readEntry )
 import Brian.ID          ( ID(ID) )
 import Brian.SQLite      ( Column(Column), ColumnFlag(FlagUnique, PrimaryKey),
-                           ColumnType(CTypeInteger, CTypeText), Table(Table),
+                           ColumnType(CTypeInteger, CTypeText), Table,
                            TableFlag(ForeignKey, OkayIfExists), createTable,
                            query_, reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError,
@@ -97,18 +104,20 @@ buildTables ∷ ∀ ε ω μ .
                MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
               Connection → ReCreateTables → DoMock → μ ()
 buildTables conn recreate mck = do
-  let create = case recreate of
+  let create ∷ Table α ⇒ Connection → Proxy α → DoMock → μ ()
+      create = case recreate of
                  ReCreateTables   → reCreateTable
                  NoReCreateTables → createTable
-  create conn entryTable mck
-  create conn (Table "Tag" [ OkayIfExists ]
+  create conn {- entryTable -} (Proxy ∷ Proxy EntryTable) mck
+  create conn {- (Table "Tag" [ OkayIfExists ]
          [ Column "id"          CTypeInteger [PrimaryKey]
          , Column "tag"         CTypeText    [FlagUnique]
-         ]) mck
-  create conn (Table "TagRef" [ OkayIfExists, ForeignKey ["recordid"] ]
+         ]) -} (Proxy ∷ Proxy TagsTable) mck
+  create conn
+         {- (Table "TagRef" [ OkayIfExists, ForeignKey ["recordid"] ]
          [ Column "recordid"    CTypeInteger ф
          , Column "tagid"       CTypeInteger ф
-         ]) mck
+         ]) -} (Proxy ∷ Proxy TagRefTable) mck
 
 data Mode = ModeCreate | ModeReCreate | ModeQuery
 
@@ -173,27 +182,36 @@ doMain mck opts = do
     DoMock → throwUsageT "dry-run not yet implemented"
     NoMock → return ()
 
+{-
   conn ← case opts ⊣ dbFile of
            FileR r | r ≡ [relfile|-|] → return 𝕹
            x                          → liftIO $ 𝕵 ⊳ open (toString x)
+-}
+
   t    ← case opts ⊣ inputFile of
            𝕵 f → readFileUTF8Lenient f
            𝕹   → pack ⊳ brian
 
   let ts ∷ [Tag 𝕋] = parseTags t
 
-  case conn of
-    𝕹   → parseEntries ts ≫ mapM_ printEntry
-    𝕵 c → do
-      let build cnn recreate mock = do
-            buildTables cnn recreate mock
-            tags_table ← getTagsTable cnn
-            let go tgs e = insertEntry c tgs e mock
-            parseEntries ts ≫ foldM_ go tags_table
-      case opts ⊣ mode of
-        ModeCreate   → build c NoReCreateTables mck
-        ModeReCreate → build c ReCreateTables   mck
-        ModeQuery    → queryEntries c mck
+--  case conn of
+  case opts ⊣ dbFile of
+    FileR r | r ≡ [relfile|-|] → parseEntries ts ≫ mapM_ printEntry
+--    𝕹   → parseEntries ts ≫ mapM_ printEntry
+    x                          → do
+      c ← liftIO $ open (toString x)
+      flip finally (liftIO $ close c) $ do
+--    𝕵 c → do
+        let build cnn recreate mock = do
+              buildTables cnn recreate mock
+              -- tags_table ← getTagsTable cnn
+              let go {- tgs -} e = insertEntry c {- tgs -} e mock
+              -- parseEntries ts ≫ foldM_ go tags_table
+              parseEntries ts ≫ mapM_ go
+        case opts ⊣ mode of
+          ModeCreate   → build c NoReCreateTables mck
+          ModeReCreate → build c ReCreateTables   mck
+          ModeQuery    → queryEntries c mck
 
 ----------------------------------------
 

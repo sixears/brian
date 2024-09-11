@@ -90,7 +90,7 @@ library
   other-extensions:
 
   -- Other library packages from which modules are imported.
-  build-depends:       base, containers, data-textual, HTTP, lens
+  build-depends:       base, containers, data-textual, HTTP
                      , logging-effect, mtl, optparse-applicative, parsers
                      , safe-exceptions, sqlite-simple, tagsoup, text
                      , text-printer, word-wrap
