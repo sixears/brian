@@ -35,20 +35,19 @@ import Natural ( length )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), SQLData,
-                                fromOnly )
+import Database.SQLite.Simple ( Connection, Only(Only), SQLData, fromOnly )
 
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag        ( BTags, btags, insertTags_ )
+import Brian.BTag        ( btags, insertTagRefs_, insertTags_ )
 import Brian.Entry       ( Entry(Entry), EntryRow, entryRow, tags, title )
 import Brian.ID          ( ID(unID) )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
                            ColumnName, ColumnType(CTypeInteger, CTypeText),
                            Table(columns, tName, type RowType), TableName,
-                           execute, insertTableRows_, query, withinTransaction )
+                           insertTableRows_, query, withinTransaction )
 import Brian.SQLiteError ( AsSQLiteError, throwSQLMiscError )
 
 --------------------------------------------------------------------------------
@@ -89,19 +88,6 @@ data Insert = Insert { _iTable      :: TableName
   deriving (Show)
 
 ------------------------------------------------------------
-
-insertTagRefs_ ∷ (MonadIO μ,
-                  AsSQLiteError ε, Printable ε, MonadError ε μ,
-                  HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
-                 Connection → ID → BTags → DoMock → μ ()
-insertTagRefs_ conn n tgs =
-  let sql =
-        let insert = "INSERT INTO TagRef (recordid, tagid)"
-        in  Query $ [fmt|%t SELECT %d,id FROM Tag WHERE tag IN (%L)|]
-                    insert (unID n) (const ("?"∷𝕋) ⊳ toList tgs)
-  in  execute @_ @[𝕋] Informational conn sql (toText ⊳ toList tgs)
-
-----------------------------------------
 
 insertEntry_ ∷ ∀ ε ω μ .
                (MonadIO μ, Default ω, MonadLog (Log ω) μ,

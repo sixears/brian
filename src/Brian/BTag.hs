@@ -6,12 +6,14 @@ module Brian.BTag
   , TagsRow(TagsRow)
   , TagsTable
   , btags
+  , insertTagRefs
+  , insertTagRefs_
   , insertTags
   , insertTags_
   , tagsRows
   ) where
 
-import Base1T
+import Base1T hiding ( toList )
 
 -- base --------------------------------
 
@@ -39,8 +41,8 @@ import Text.Parser.Combinators ( sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple           ( Connection, Only, SQLData(SQLText),
-                                          ToRow(toRow) )
+import Database.SQLite.Simple           ( Connection, Only, Query(Query),
+                                          SQLData(SQLText), ToRow(toRow) )
 import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
@@ -62,11 +64,11 @@ import TextualPlus ( TextualPlus(textual') )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.ID          ( ID )
+import Brian.ID          ( ID(unID) )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc),
                            ColumnFlag(FlagUnique, NoInsert, PrimaryKey),
                            ColumnType(CTypeInteger, CTypeText),
-                           Table(columns, tName, type RowType),
+                           Table(columns, tName, type RowType), execute,
                            insertTableRows_, withinTransaction )
 import Brian.SQLiteError ( AsSQLiteError )
 
@@ -163,5 +165,27 @@ insertTags ∷ (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
               Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
              Connection → BTags → DoMock → μ [(TagsRow,[Only ID])]
 insertTags conn tgs mck = withinTransaction conn mck $ insertTags_ conn tgs mck
+
+----------------------------------------
+
+insertTagRefs_ ∷ (MonadIO μ,
+                  AsSQLiteError ε, Printable ε, MonadError ε μ,
+                  HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
+                 Connection → ID → BTags → DoMock → μ ()
+insertTagRefs_ conn n tgs =
+  let sql =
+        let insert = "INSERT INTO TagRef (recordid, tagid)"
+        in  Query $ [fmt|%t SELECT %d,id FROM Tag WHERE tag IN (%L)|]
+                    insert (unID n) (const ("?"∷𝕋) ⊳ toList tgs)
+  in  execute @_ @[𝕋] Informational conn sql (toText ⊳ toList tgs)
+
+----------------------------------------
+
+insertTagRefs ∷ (MonadIO μ,
+                 AsSQLiteError ε, Printable ε, MonadError ε μ,
+                 HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
+                Connection → ID → BTags → DoMock → μ ()
+insertTagRefs conn n tgs mck =
+  withinTransaction conn mck $ insertTagRefs_ conn n tgs mck
 
 -- that's all, folks! ----------------------------------------------------------
