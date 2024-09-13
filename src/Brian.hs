@@ -4,6 +4,7 @@ module Brian
   ) where
 
 import Base1T
+import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
@@ -159,7 +160,7 @@ dumpEntry ∷ ∀ ε ω μ .
             Connection → DoMock → (Only ℤ) → μ ()
 dumpEntry c mck (Only eid) = do
   e ← readEntry c (ID $ fromIntegral eid) mck
-  case e of
+  case traceShow ("e",e) $ e of
     𝕵 e' → say $ [fmtT|%T\n\n----|] e'
     𝕹    → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
 

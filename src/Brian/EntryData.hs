@@ -56,8 +56,8 @@ import Brian.SQLite      ( ColumnDesc(ColumnDesc),
                            ColumnName(unColumnName),
                            ColumnType(CTypeInteger, CTypeText),
                            Table(columns, tName, type RowType), TableName,
-                           execute_, insertTableRows, insertTableRows_, query,
-                           withinTransaction )
+                           execute, execute_, insertTableRows, insertTableRows_,
+                           query, withinTransaction )
 import Brian.SQLiteError ( AsSQLiteError, throwSQLMiscError )
 
 --------------------------------------------------------------------------------
@@ -132,11 +132,18 @@ insertEntry_ conn e mck = do
   row_ids ← insertTableRows_ Informational (Proxy ∷ Proxy EntryTable) conn [entryRow e] "ON CONFLICT (id) DO NOTHING RETURNING (id)" mck
 
   case row_ids of
-       [(_, [Only (n ∷ ID)])] → do
-         infoT $ [fmt|inserted %d (%T)|] (unID n) name
-         insertTags_ conn e mck
-         return $ 𝕵 n
-       _ → return 𝕹
+    [(_, [Only (n ∷ ID)])] → do
+      infoT $ [fmt|inserted %d (%T)|] (unID n) name
+-- XXX pass tags, not e, here
+      insertTags_ conn e mck
+      let tgs = e ⊣ tags
+      let sql = Query $ [fmt|INSERT INTO TagRef (recordid, tagid) SELECT %d,id FROM Tag WHERE tag IN (%L)|] (unID n) (const ("?"∷𝕋) ⊳ toList tgs)
+      execute @_ @[𝕋] Informational conn sql (toText ⊳ toList tgs) mck
+      return $ 𝕵 n
+    _ → return 𝕹
+
+  -- INSERT INTO TagRef (recordid, tagid) SELECT 1,id FROM Tag WHERE tag IN ('country_us','gagtype_cleave');
+-- Insert TagRef
 
   -- execute_ conn $ "ROLLBACK TRANSACTION" -- in emergency…
 

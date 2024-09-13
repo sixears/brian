@@ -10,6 +10,7 @@ module Brian.SQLite
   , TableName
   , columnID
   , createTable
+  , execute
   , execute_
   , fold
   , insertTableRows
@@ -26,6 +27,8 @@ import Base1T
 import Debug.Trace ( traceShow )
 
 -- base --------------------------------
+
+import Control.Exception qualified as Exception
 
 import Data.Foldable ( Foldable )
 import Data.List     ( filter )
@@ -47,7 +50,7 @@ import MockIO.Log     ( DoMock, HasDoMock, mkIOLME )
 
 -- safe-exceptions ---------------------
 
-import Control.Exception qualified as Exception
+import Control.Exception.Safe ( bracketWithError )
 
 -- sqlite-simple -----------------------
 
@@ -165,7 +168,6 @@ class Table α where
 
 ------------------------------------------------------------
 
-{-
 execute ∷ ∀ ε ξ ω μ .
           (MonadIO μ, ToRow ξ, AsSQLiteError ε, MonadError ε μ, Printable ε,
            MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
@@ -176,7 +178,6 @@ execute sev conn sql r =
                  ]
       io       = ((SQLite.execute conn sql r) `catches` handlers)
   in  mkIOLME sev IOWrite ([fmtT|sqlex %w|] sql) () io
--}
 
 ----------------------------------------
 
