@@ -37,15 +37,12 @@ import Natural ( length )
 
 import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), SQLData,
                                 fromOnly )
--- text --------------------------------
-
-import Data.Text qualified as Text
 
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag        ( BTags, TagsRow, TagsTable, btags, tagsRows )
+import Brian.BTag        ( BTags, btags, insertTags_ )
 import Brian.Entry       ( Entry(Entry), EntryRow, entryRow, tags, title )
 import Brian.ID          ( ID(unID) )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
@@ -103,19 +100,6 @@ insertTagRefs_ conn n tgs =
         in  Query $ [fmt|%t SELECT %d,id FROM Tag WHERE tag IN (%L)|]
                     insert (unID n) (const ("?"∷𝕋) ⊳ toList tgs)
   in  execute @_ @[𝕋] Informational conn sql (toText ⊳ toList tgs)
-
-----------------------------------------
-
-insertTags_ ∷ (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
-               Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
-              Connection → BTags → DoMock → μ [(TagsRow,[Only ID])]
-insertTags_ conn tgs mck =
-  let extra = Text.intercalate " " [ "ON CONFLICT (id) DO NOTHING"
-                                   , "ON CONFLICT (tag) DO NOTHING"
-                                   , "RETURNING (id)"
-                                   ]
-      pTags = Proxy ∷ Proxy TagsTable
-  in  insertTableRows_ Informational pTags conn (tagsRows tgs) extra mck
 
 ----------------------------------------
 

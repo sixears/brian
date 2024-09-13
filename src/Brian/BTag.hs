@@ -6,6 +6,8 @@ module Brian.BTag
   , TagsRow(TagsRow)
   , TagsTable
   , btags
+  , insertTags
+  , insertTags_
   , tagsRows
   ) where
 
@@ -14,7 +16,21 @@ import Base1T
 -- base --------------------------------
 
 import Data.Monoid ( Monoid )
+import Data.Proxy  ( Proxy(Proxy) )
 import GHC.Exts    ( IsString, toList )
+
+-- logging-effect ----------------------
+
+import Control.Monad.Log ( MonadLog, Severity(Informational) )
+
+-- logs-plus ---------------------------
+
+import Log ( Log )
+
+-- mockio-log --------------------------
+
+import MockIO.IOClass ( HasIOClass )
+import MockIO.Log     ( DoMock, HasDoMock )
 
 -- parsers -----------------------------
 
@@ -23,11 +39,14 @@ import Text.Parser.Combinators ( sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple           ( SQLData(SQLText), ToRow(toRow) )
+import Database.SQLite.Simple           ( Connection, Only, SQLData(SQLText),
+                                          ToRow(toRow) )
 import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- text --------------------------------
+
+import Data.Text qualified as T
 
 import Data.Text ( intercalate, pack )
 
@@ -43,11 +62,13 @@ import TextualPlus ( TextualPlus(textual') )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.ID     ( ID )
-import Brian.SQLite ( ColumnDesc(ColumnDesc),
-                      ColumnFlag(FlagUnique, NoInsert, PrimaryKey),
-                      ColumnType(CTypeInteger, CTypeText),
-                      Table(columns, tName, type RowType) )
+import Brian.ID          ( ID )
+import Brian.SQLite      ( ColumnDesc(ColumnDesc),
+                           ColumnFlag(FlagUnique, NoInsert, PrimaryKey),
+                           ColumnType(CTypeInteger, CTypeText),
+                           Table(columns, tName, type RowType),
+                           insertTableRows_, withinTransaction )
+import Brian.SQLiteError ( AsSQLiteError )
 
 --------------------------------------------------------------------------------
 
@@ -122,6 +143,25 @@ data TagRefTable
 instance Table TagRefTable where
   type instance RowType TagRefTable = TagsRefRow
   tName   _ = "TagRef"
-  columns _ = (ColumnDesc "recordid" CTypeInteger []) :| [ ColumnDesc "tagid" CTypeInteger [] ]
+  columns _ =    ColumnDesc "recordid" CTypeInteger []
+            :| [ ColumnDesc "tagid" CTypeInteger [] ]
+
+insertTags_ ∷ (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
+               Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
+              Connection → BTags → DoMock → μ [(TagsRow,[Only ID])]
+insertTags_ conn tgs mck =
+  let extra = T.intercalate " " [ "ON CONFLICT (id) DO NOTHING"
+                                , "ON CONFLICT (tag) DO NOTHING"
+                                , "RETURNING (id)"
+                                ]
+      pTags = Proxy ∷ Proxy TagsTable
+  in  insertTableRows_ Informational pTags conn (tagsRows tgs) extra mck
+
+----------------------------------------
+
+insertTags ∷ (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
+              Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
+             Connection → BTags → DoMock → μ [(TagsRow,[Only ID])]
+insertTags conn tgs mck = withinTransaction conn mck $ insertTags_ conn tgs mck
 
 -- that's all, folks! ----------------------------------------------------------
