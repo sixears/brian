@@ -93,6 +93,8 @@ openURL' x t = let content_type = "application/x-www-form-urlencoded"
 brian ∷ MonadIO μ ⇒ μ String
 brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
 
+------------------------------------------------------------
+
 data ReCreateTables = ReCreateTables | NoReCreateTables
 
 buildTables ∷ ∀ ε ω μ .
@@ -105,32 +107,37 @@ buildTables conn recreate mck = do
       create = case recreate of
                  ReCreateTables   → reCreateTable
                  NoReCreateTables → createTable
-  create conn {- entryTable -} (Proxy ∷ Proxy EntryTable) mck
-  create conn {- (Table "Tag" [ OkayIfExists ]
-         [ Column "id"          CTypeInteger [PrimaryKey]
-         , Column "tag"         CTypeText    [FlagUnique]
-         ]) -} (Proxy ∷ Proxy TagsTable) mck
-  create conn
-         {- (Table "TagRef" [ OkayIfExists, ForeignKey ["recordid"] ]
-         [ Column "recordid"    CTypeInteger ф
-         , Column "tagid"       CTypeInteger ф
-         ]) -} (Proxy ∷ Proxy TagRefTable) mck
+  create conn (Proxy ∷ Proxy EntryTable) mck
+  create conn (Proxy ∷ Proxy TagsTable) mck
+  create conn (Proxy ∷ Proxy TagRefTable) mck
+
+------------------------------------------------------------
 
 data Mode = ModeCreate | ModeReCreate | ModeQuery
+
+------------------------------------------------------------
 
 data Options ε = Options { _mode      :: Mode
                          , _dbFile    :: File
                          , _inputFile :: 𝕄 File
                          }
 
+--------------------
+
 mode ∷ Lens' (Options ε) Mode
 mode = lens _mode (\ o m → o { _mode = m })
+
+--------------------
 
 dbFile ∷ Lens' (Options ε) File
 dbFile = lens _dbFile (\ o f → o { _dbFile = f })
 
+--------------------
+
 inputFile ∷ Lens' (Options ε) (𝕄 File)
 inputFile = lens _inputFile (\ o f → o { _inputFile = f })
+
+----------------------------------------
 
 optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε, Printable ε) ⇒
                 Parser (Options ε)
@@ -179,31 +186,20 @@ doMain mck opts = do
     DoMock → throwUsageT "dry-run not yet implemented"
     NoMock → return ()
 
-{-
-  conn ← case opts ⊣ dbFile of
-           FileR r | r ≡ [relfile|-|] → return 𝕹
-           x                          → liftIO $ 𝕵 ⊳ open (toString x)
--}
-
   t    ← case opts ⊣ inputFile of
            𝕵 f → readFileUTF8Lenient f
            𝕹   → pack ⊳ brian
 
   let ts ∷ [Tag 𝕋] = parseTags t
 
---  case conn of
   case opts ⊣ dbFile of
     FileR r | r ≡ [relfile|-|] → parseEntries ts ≫ mapM_ printEntry
---    𝕹   → parseEntries ts ≫ mapM_ printEntry
     x                          → do
       c ← liftIO $ open (toString x)
       flip finally (liftIO $ close c) $ do
---    𝕵 c → do
         let build cnn recreate mock = do
               buildTables cnn recreate mock
-              -- tags_table ← getTagsTable cnn
-              let go {- tgs -} e = insertEntry c {- tgs -} e mock
-              -- parseEntries ts ≫ foldM_ go tags_table
+              let go e = insertEntry c e mock
               parseEntries ts ≫ mapM_ go
         case opts ⊣ mode of
           ModeCreate   → build c NoReCreateTables mck

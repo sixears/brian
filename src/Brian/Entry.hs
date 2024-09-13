@@ -92,7 +92,6 @@ data EntryRow = EntryRow { _erRecordNumber :: ID
                          , _erTitle        :: Title
                          , _erMedium       :: 𝕄 Medium
                          , _arActresses    :: Actresses
-                           -- , _tags         :: BTags
                          , _erDescription  :: Description
                          }
 
@@ -104,7 +103,8 @@ entryRow e = EntryRow (e ⊣ recordNumber)
                   (e ⊣ description)
 
 instance ToRow EntryRow
-  where toRow (EntryRow rn tt md ac ds) = toRow (rn, unTitle tt, md, toField ac, toField ds)
+  where toRow (EntryRow rn tt md ac ds) =
+          toRow (rn, unTitle tt, md, toField ac, toField ds)
 
 instance ToRow Entry where
   toRow e = toRow ( e ⊣ recordNumber

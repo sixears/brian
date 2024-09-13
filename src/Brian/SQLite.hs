@@ -129,10 +129,6 @@ instance Printable TableName where print = P.text ∘ unTable
 
 ------------------------------------------------------------
 
--- data ColumnTips = NoAttrs | NoInsert deriving (Eq)
-
-------------------------------------------------------------
-
 data ColumnDesc = ColumnDesc ColumnName ColumnType [ColumnFlag]
   deriving (Show)
 
@@ -237,25 +233,6 @@ fold sev conn sql r ini acc mock_value =
 
 ----------------------------------------
 
-{-
-data Table = Table { _tname  :: TableName
-                   , _tflags :: [TableFlag]
-                   , _tcols  :: [Column]
-                   }
-
-tname ∷ Lens' Table TableName
-tname = lens _tname (\ t n → t { _tname = n })
-
-tflags ∷ Lens' Table [TableFlag]
-tflags = lens _tflags (\ t fs → t { _tflags = fs })
-
-tcols ∷ Lens' Table [Column]
-tcols = lens _tcols (\ t cs → t { _tcols = cs })
-
--}
-
--- CREATE TABLE Entry (id INTEGER  PRIMARY KEY, title TEXT , medium TEXT , actresses TEXT , description TEXT );
-
 createTable ∷ ∀ ε α ω μ . Table α ⇒
               (MonadIO μ, AsSQLiteError ε, MonadError ε μ, Printable ε,
                MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
@@ -274,24 +251,7 @@ reCreateTable ∷ ∀ ε α ω μ . Table α ⇒
 reCreateTable conn p mck = do
   let sql = fromString $ [fmt|DROP TABLE %T|] (tName p)
   execute_ Informational conn sql mck
---  createTable conn (t & tflags ⊧ filter (≢ OkayIfExists)) mck
   createTable conn p mck
-
-----------------------------------------
-
--- χ is the type of the returned row, e.g., (Only ID) for a single value
-{-
-insertRow ∷ ∀ ε α ξ χ ω μ . Table α ⇒
-            (MonadIO μ, ToRow ξ, FromRow χ,
-             AsSQLiteError ε, Printable ε, MonadError ε μ,
-             MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-            Severity → Connection → α → 𝕄 𝕋 → ξ → [χ] → DoMock → μ [χ]
-insertRow sev conn t extra r =
-  let sql = fromString $ [fmt|INSERT INTO %T (%L) VALUES (%L)%T|]
-                         (t ⊣ tname) (cname ⊳ t ⊣ tcols)
-                         (const ("?"∷𝕋) ⊳ t ⊣ tcols) (maybe "" (" " ⊕) extra)
-  in  query sev conn sql r
--}
 
 ----------------------------------------
 

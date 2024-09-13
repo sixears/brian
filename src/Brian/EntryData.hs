@@ -56,10 +56,6 @@ import Brian.SQLiteError ( AsSQLiteError, throwSQLMiscError )
 
 --------------------------------------------------------------------------------
 
--- type TagsTable = Map.Map BTag ID
-
-------------------------------------------------------------
-
 {- | A map from column to SQL data -}
 newtype SQLDataMap = SQLDataMap { unSQLDataMap :: Map.Map ColumnName SQLData }
   deriving (Show)
@@ -78,10 +74,11 @@ data EntryTable
 instance Table EntryTable where
   type instance RowType EntryTable = EntryRow
   tName   _ = "Entry"
-  columns _ = (ColumnDesc "id" CTypeInteger [PrimaryKey]) :| [ ColumnDesc "title" CTypeText []
-                                           , ColumnDesc "medium" CTypeText []
-                                           , ColumnDesc "actresses" CTypeText []
-                                           , ColumnDesc "description" CTypeText [] ]
+  columns _ =  ( ColumnDesc "id"          CTypeInteger [PrimaryKey] )
+            :| [ ColumnDesc "title"       CTypeText []
+               , ColumnDesc "medium"      CTypeText []
+               , ColumnDesc "actresses"   CTypeText []
+               , ColumnDesc "description" CTypeText [] ]
 
 ------------------------------------------------------------
 
