@@ -14,8 +14,6 @@ module Brian.SQLite
   , execute_
   , fold
   , insertTableRows
-  , type RowType
-    --  , insertRow
   , insertTableRows_
   , query
   , query_
@@ -24,7 +22,6 @@ module Brian.SQLite
   ) where
 
 import Base1T
-import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
@@ -32,7 +29,7 @@ import Control.Exception qualified as Exception
 
 import Data.Foldable ( Foldable )
 import Data.List     ( filter )
-import Data.Proxy    ( Proxy(Proxy) )
+import Data.Proxy    ( Proxy )
 import GHC.Exts      ( IsString(fromString) )
 
 -- logs-plus ---------------------------
@@ -47,10 +44,6 @@ import Control.Monad.Log ( MonadLog, Severity(Debug, Informational) )
 
 import MockIO.IOClass ( HasIOClass, IOClass(IOWrite) )
 import MockIO.Log     ( DoMock, HasDoMock, mkIOLME )
-
--- safe-exceptions ---------------------
-
-import Control.Exception.Safe ( bracketWithError )
 
 -- sqlite-simple -----------------------
 
@@ -156,7 +149,7 @@ insertColumns (toList → cols) =
 instance Printable ColumnDesc where
   print (ColumnDesc nm tp flgs) = P.text $
     let x = [fmt|%T %T %t|] nm tp (Text.intercalate " " $ filter (≢ "") $ toText ⊳ flgs)
-    in traceShow ("x",x,"flgs",show flgs) $ x
+    in x
 ------------------------------------------------------------
 
 class Table α where
@@ -320,8 +313,9 @@ insertTableRows_ ∷ ∀ ε α β ω μ .
                    Severity → Proxy α → Connection → [RowType α] → 𝕋 → DoMock
                  → μ [(RowType α, [β])]
 insertTableRows_ sev p conn rows extra mck = do
-  let sql = traceShow ("c",columns p) $ Query $ [fmt|INSERT INTO %T (%L) VALUES (%L)%t%T|] (tName p)
-                    (insertColumns ∘ toList $ columns p) (const ("?"∷𝕋) ⊳ (insertColumns ∘ toList $ columns p))
+  let sql = Query $ [fmt|INSERT INTO %T (%L) VALUES (%L)%t%T|] (tName p)
+                    (insertColumns ∘ toList $ columns p)
+                    (const ("?"∷𝕋) ⊳ (insertColumns ∘ toList $ columns p))
                     (if extra ≡ "" then "" else " ") extra
   forM rows $ \ row → (row,) ⊳ query sev conn sql row ф mck
 
@@ -335,15 +329,5 @@ insertTableRows ∷ ∀ ε α β ω μ .
                 → μ [(RowType α, [β])]
 insertTableRows sev p conn rows extra mck =
   withinTransaction conn mck $ insertTableRows_ sev p conn rows extra mck
-{-
-  execute_ Debug conn "BEGIN TRANSACTION" mck
-  let sql = Query $ [fmt|INSERT INTO %T (%L) VALUES (%L)%t%T|] (tName p)
-                    (insertColumns ∘ toList $ columns p) (const ("?"∷𝕋) ⊳ (insertColumns ∘ toList $ columns p))
-                    (if extra ≡ "" then "" else " ") extra
-  results ← forM rows $ \ row → (row,) ⊳ query sev conn sql row ф mck
-
-  execute_ Debug conn "COMMIT TRANSACTION" mck
-  return results
--}
 
 -- that's all, folks! ----------------------------------------------------------

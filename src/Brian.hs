@@ -4,12 +4,11 @@ module Brian
   ) where
 
 import Base1T
-import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
 import Control.Applicative ( optional )
-import Control.Monad       ( foldM_, (=<<) )
+import Control.Monad       ( (=<<) )
 import Data.Function       ( flip )
 import Data.Proxy          ( Proxy(Proxy) )
 import System.Environment  ( getArgs )
@@ -80,10 +79,7 @@ import Brian.BTag        ( TagRefTable, TagsTable )
 import Brian.Entry       ( parseEntries, printEntry )
 import Brian.EntryData   ( EntryTable, insertEntry, readEntry )
 import Brian.ID          ( ID(ID) )
-import Brian.SQLite      ( Column(Column), ColumnFlag(FlagUnique, PrimaryKey),
-                           ColumnType(CTypeInteger, CTypeText), Table,
-                           TableFlag(ForeignKey, OkayIfExists), createTable,
-                           query_, reCreateTable )
+import Brian.SQLite      ( Table, createTable, query_, reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError,
                            throwSQLMiscError )
 
@@ -160,7 +156,7 @@ dumpEntry ∷ ∀ ε ω μ .
             Connection → DoMock → (Only ℤ) → μ ()
 dumpEntry c mck (Only eid) = do
   e ← readEntry c (ID $ fromIntegral eid) mck
-  case traceShow ("e",e) $ e of
+  case e of
     𝕵 e' → say $ [fmtT|%T\n\n----|] e'
     𝕹    → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
 
