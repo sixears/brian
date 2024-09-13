@@ -75,7 +75,8 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag        ( TagRefTable, TagsTable )
+import Brian.Actress     ( ActressRefTable, ActressTable )
+import Brian.BTag        ( TagRefTable, TagTable )
 import Brian.Entry       ( parseEntries, printEntry )
 import Brian.EntryData   ( EntryTable, insertEntry, readEntry )
 import Brian.ID          ( ID(ID) )
@@ -108,8 +109,10 @@ buildTables conn recreate mck = do
                  ReCreateTables   → reCreateTable
                  NoReCreateTables → createTable
   create conn (Proxy ∷ Proxy EntryTable) mck
-  create conn (Proxy ∷ Proxy TagsTable) mck
+  create conn (Proxy ∷ Proxy TagTable) mck
   create conn (Proxy ∷ Proxy TagRefTable) mck
+  create conn (Proxy ∷ Proxy ActressTable) mck
+  create conn (Proxy ∷ Proxy ActressRefTable) mck
 
 ------------------------------------------------------------
 

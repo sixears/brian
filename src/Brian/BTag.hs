@@ -3,9 +3,11 @@ module Brian.BTag
   ( BTag(unBTag)
   , BTags(unBTags)
   , TagRefTable
+  , TagTable
   , TagsRow(TagsRow)
-  , TagsTable
   , btags
+  , insertEntryTags
+  , insertEntryTags_
   , insertTagRefs
   , insertTagRefs_
   , insertTags
@@ -50,8 +52,6 @@ import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 import Data.Text qualified as T
 
-import Data.Text ( intercalate, pack )
-
 -- text-printer ------------------------
 
 import Text.Printer qualified as P
@@ -83,7 +83,7 @@ instance Printable BTag where
 
 instance TextualPlus BTag where
   textual' = let chars = "-_/ " ⊕ ['0'..'9'] ⊕ ['a'..'z'] ⊕ ['A'..'Z']
-             in  BTag ∘ pack ⊳ many (oneOf chars) <?> "BTag"
+             in  BTag ∘ T.pack ⊳ many (oneOf chars) <?> "BTag"
 
 instance ToField BTag where
   toField = toField ∘ unBTag
@@ -103,7 +103,7 @@ instance IsList BTags where
   toList   = unBTags
 
 instance Printable BTags where
-  print (BTags bs) = P.text $ intercalate ", " (toText ⊳ bs)
+  print (BTags bs) = P.text $ T.intercalate ", " (toText ⊳ bs)
 
 instance TextualPlus BTags where
   textual' = (BTags ⊳ textual' `sepBy` some (oneOf " .,<>:;()")) <?> "BTags"
@@ -123,13 +123,32 @@ tagsRows = TagsRow ⩺ unBTags
 
 ------------------------------------------------------------
 
-data TagsTable
+data TagTable
 
-instance Table TagsTable where
-  type instance RowType TagsTable = TagsRow
+instance Table TagTable where
+  type instance RowType TagTable = TagsRow
   tName   _ = "Tag"
   columns _ =    ColumnDesc "id" CTypeInteger [NoInsert,PrimaryKey]
             :| [ ColumnDesc "tag" CTypeText [FlagUnique] ]
+----------------------------------------
+
+insertTags_ ∷ (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
+               Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
+              Connection → BTags → DoMock → μ [(TagsRow,[Only ID])]
+insertTags_ conn tgs mck =
+  let extra = T.intercalate " " [ "ON CONFLICT (id) DO NOTHING"
+                                , "ON CONFLICT (tag) DO NOTHING"
+                                , "RETURNING (id)"
+                                ]
+      pTags = Proxy ∷ Proxy TagTable
+  in  insertTableRows_ Informational pTags conn (tagsRows tgs) extra mck
+
+--------------------
+
+insertTags ∷ (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
+              Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
+             Connection → BTags → DoMock → μ [(TagsRow,[Only ID])]
+insertTags conn tgs mck = withinTransaction conn mck $ insertTags_ conn tgs mck
 
 ------------------------------------------------------------
 
@@ -148,24 +167,6 @@ instance Table TagRefTable where
   columns _ =    ColumnDesc "recordid" CTypeInteger []
             :| [ ColumnDesc "tagid" CTypeInteger [] ]
 
-insertTags_ ∷ (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
-               Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
-              Connection → BTags → DoMock → μ [(TagsRow,[Only ID])]
-insertTags_ conn tgs mck =
-  let extra = T.intercalate " " [ "ON CONFLICT (id) DO NOTHING"
-                                , "ON CONFLICT (tag) DO NOTHING"
-                                , "RETURNING (id)"
-                                ]
-      pTags = Proxy ∷ Proxy TagsTable
-  in  insertTableRows_ Informational pTags conn (tagsRows tgs) extra mck
-
-----------------------------------------
-
-insertTags ∷ (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
-              Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
-             Connection → BTags → DoMock → μ [(TagsRow,[Only ID])]
-insertTags conn tgs mck = withinTransaction conn mck $ insertTags_ conn tgs mck
-
 ----------------------------------------
 
 insertTagRefs_ ∷ (MonadIO μ,
@@ -179,7 +180,7 @@ insertTagRefs_ conn n tgs =
                     insert (unID n) (const ("?"∷𝕋) ⊳ toList tgs)
   in  execute @_ @[𝕋] Informational conn sql (toText ⊳ toList tgs)
 
-----------------------------------------
+--------------------
 
 insertTagRefs ∷ (MonadIO μ,
                  AsSQLiteError ε, Printable ε, MonadError ε μ,
@@ -187,5 +188,24 @@ insertTagRefs ∷ (MonadIO μ,
                 Connection → ID → BTags → DoMock → μ ()
 insertTagRefs conn n tgs mck =
   withinTransaction conn mck $ insertTagRefs_ conn n tgs mck
+
+----------------------------------------
+
+insertEntryTags_ ∷ (MonadIO μ,
+                    AsSQLiteError ε, Printable ε, MonadError ε μ,
+                    HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
+                   Connection → ID → BTags → DoMock → μ ()
+insertEntryTags_ conn n tgs mck = do
+  _ ← insertTags_ conn tgs mck
+  insertTagRefs_ conn n tgs mck
+
+--------------------
+
+insertEntryTags ∷ (MonadIO μ,
+                   AsSQLiteError ε, Printable ε, MonadError ε μ,
+                   HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
+                  Connection → ID → BTags → DoMock → μ ()
+insertEntryTags conn n tgs mck =
+  withinTransaction conn mck $ insertEntryTags_ conn n tgs mck
 
 -- that's all, folks! ----------------------------------------------------------

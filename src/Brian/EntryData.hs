@@ -35,14 +35,17 @@ import Natural ( length )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, Only(Only), SQLData, fromOnly )
+import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), SQLData,
+                                fromOnly )
 
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.BTag        ( btags, insertTagRefs_, insertTags_ )
-import Brian.Entry       ( Entry(Entry), EntryRow, entryRow, tags, title )
+import Brian.Actress     ( insertEntryActresses_, mkActresses )
+import Brian.BTag        ( btags, insertEntryTags_ )
+import Brian.Entry       ( Entry(Entry), EntryRow, actresses, entryRow, tags,
+                           title )
 import Brian.ID          ( ID(unID) )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
                            ColumnName, ColumnType(CTypeInteger, CTypeText),
@@ -103,12 +106,13 @@ insertEntry_ conn e mck = do
   case row_ids of
     [(_, [Only (n ∷ ID)])] → do
       infoT $ [fmt|inserted %d (%T)|] (unID n) name
-      let tgs = e ⊣ tags
-      _ ← insertTags_ conn tgs mck
-      insertTagRefs_ conn n tgs mck
+      insertEntryTags_ conn n (e ⊣ tags) mck
+      insertEntryActresses_ conn n (e ⊣ actresses) mck
       return $ 𝕵 n
     _ → return 𝕹
 
+
+--------------------
 
 insertEntry ∷ ∀ ε ω μ .
               (MonadIO μ, Default ω, MonadLog (Log ω) μ,
@@ -125,14 +129,17 @@ readEntry ∷ ∀ ε ω μ .
              MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
             Connection → ID → DoMock → μ (𝕄 Entry)
 readEntry conn eid mck = do
-  let sql = "SELECT title,medium,actresses,description FROM Entry WHERE ID = ?"
+  let sql = "SELECT title,medium,description FROM Entry WHERE ID = ?"
   query Informational conn sql (Only eid) [] mck ≫ \ case
     []                    → return 𝕹
 
-    [(ttle,mdm,act,desc)] → do
-      let sql' = "SELECT tag FROM Tag,TagRef WHERE recordid = ? AND id = tagid"
-      tgs ← btags ⊳ (fromOnly ⊳⊳query Informational conn sql' (Only eid) [] mck)
-      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) act tgs desc
+    [(ttle,mdm,desc)] → do
+      let bsql = "SELECT tag FROM Tag,TagRef WHERE recordid = ? AND id = tagid"
+      tgs ← btags ⊳ (fromOnly ⊳⊳query Informational conn bsql (Only eid) [] mck)
+      let asql = let where_ = "WHERE recordid = ? AND id = actressid"
+                 in  Query $ [fmt|SELECT actress FROM Actress,ActressRef %t|] where_
+      acts ← mkActresses ⊳ (fromOnly ⊳⊳query Informational conn asql (Only eid) [] mck)
+      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc
 
     xs                    →
       throwSQLMiscError $ [fmtT|too many (%d) entries found for %d|]

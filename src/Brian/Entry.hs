@@ -68,7 +68,7 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Actresses   ( Actresses )
+import Brian.Actress     ( Actresses )
 import Brian.BTag        ( BTags )
 import Brian.Description ( Description(Description), more )
 import Brian.ID          ( ID(ID), toℤ )

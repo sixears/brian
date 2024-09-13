@@ -249,7 +249,7 @@ reCreateTable ∷ ∀ ε α ω μ . Table α ⇒
                  MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
                 Connection → Proxy α → DoMock → μ ()
 reCreateTable conn p mck = do
-  let sql = fromString $ [fmt|DROP TABLE %T|] (tName p)
+  let sql = fromString $ [fmt|DROP TABLE IF EXISTS %T|] (tName p)
   execute_ Informational conn sql mck
   createTable conn p mck
 
