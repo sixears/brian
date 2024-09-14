@@ -42,8 +42,8 @@ import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), SQLData,
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Actress     ( insertEntryActresses_, mkActresses )
-import Brian.BTag        ( btags, insertEntryTags_ )
+import Brian.Actress     ( insertEntryActresses_, mkActresses, readActresses )
+import Brian.BTag        ( btags, insertEntryTags_, readTags )
 import Brian.Entry       ( Entry(Entry), EntryRow, actresses, entryRow, tags,
                            title )
 import Brian.ID          ( ID(unID) )
@@ -134,11 +134,8 @@ readEntry conn eid mck = do
     []                    → return 𝕹
 
     [(ttle,mdm,desc)] → do
-      let bsql = "SELECT tag FROM Tag,TagRef WHERE recordid = ? AND id = tagid"
-      tgs ← btags ⊳ (fromOnly ⊳⊳query Informational conn bsql (Only eid) [] mck)
-      let asql = let where_ = "WHERE recordid = ? AND id = actressid"
-                 in  Query $ [fmt|SELECT actress FROM Actress,ActressRef %t|] where_
-      acts ← mkActresses ⊳ (fromOnly ⊳⊳query Informational conn asql (Only eid) [] mck)
+      tgs  ← readTags      conn eid mck
+      acts ← readActresses conn eid mck
       return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc
 
     xs                    →

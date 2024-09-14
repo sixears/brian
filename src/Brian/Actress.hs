@@ -10,6 +10,7 @@ module Brian.Actress
   , insertEntryActresses
   , insertEntryActresses_
   , mkActresses
+  , readActresses
   , unActresses
   ) where
 
@@ -40,8 +41,9 @@ import Text.Parser.Combinators ( sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple           ( Connection, Only, Query(Query),
-                                          SQLData(SQLText), ToRow(toRow) )
+import Database.SQLite.Simple           ( Connection, Only(Only), Query(Query),
+                                          SQLData(SQLText), ToRow(toRow),
+                                          fromOnly )
 import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
@@ -50,6 +52,7 @@ import Database.SQLite.Simple.ToField   ( ToField(toField) )
 import Data.Text qualified as T
 
 -- text-printer ------------------------
+
 import Text.Printer qualified as P
 
 -- textual-plus ------------------------
@@ -65,7 +68,7 @@ import Brian.SQLite      ( ColumnDesc(ColumnDesc),
                            ColumnFlag(FlagUnique, NoInsert, PrimaryKey),
                            ColumnType(CTypeInteger, CTypeText),
                            Table(columns, tName, type RowType), execute,
-                           insertTableRows_, withinTransaction )
+                           insertTableRows_, query, withinTransaction )
 import Brian.SQLiteError ( AsSQLiteError )
 
 --------------------------------------------------------------------------------
@@ -197,21 +200,34 @@ insertActressRefs conn n acts mck =
 
 --------------------
 
-insertEntryActresses_ ∷ (MonadIO μ,
-                    AsSQLiteError ε, Printable ε, MonadError ε μ,
-                    HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
-                   Connection → ID → Actresses → DoMock → μ ()
+insertEntryActresses_ ∷ ∀ ε ω μ .
+                        (MonadIO μ,
+                         AsSQLiteError ε, Printable ε, MonadError ε μ,
+                         HasDoMock ω,HasIOClass ω,Default ω,MonadLog (Log ω)μ)⇒
+                        Connection → ID → Actresses → DoMock → μ ()
 insertEntryActresses_ conn n acts mck = do
   _ ← insertActresses_ conn acts mck
   insertActressRefs_ conn n acts mck
 
 --------------------
 
-insertEntryActresses ∷ (MonadIO μ,
-                   AsSQLiteError ε, Printable ε, MonadError ε μ,
-                   HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
-                  Connection → ID → Actresses → DoMock → μ ()
+insertEntryActresses ∷ ∀ ε ω μ .
+                       (MonadIO μ, AsSQLiteError ε, Printable ε, MonadError ε μ,
+                        HasDoMock ω,HasIOClass ω,Default ω,MonadLog (Log ω) μ)⇒
+                       Connection → ID → Actresses → DoMock → μ ()
 insertEntryActresses conn n acts mck =
   withinTransaction conn mck $ insertEntryActresses_ conn n acts mck
+
+----------------------------------------
+
+readActresses ∷ ∀ ε α ω μ .
+                (MonadIO μ, ToField α,
+                 AsSQLiteError ε, Printable ε, MonadError ε μ,
+                 Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
+                Connection → α → DoMock → μ Actresses
+readActresses conn n mck =
+  let asql = let where_ = "WHERE recordid = ? AND id = actressid"
+             in  Query $ [fmt|SELECT actress FROM Actress,ActressRef %t|] where_
+  in mkActresses ⊳ (fromOnly ⊳⊳query Informational conn asql (Only n) [] mck)
 
 -- that's all, folks! ----------------------------------------------------------
