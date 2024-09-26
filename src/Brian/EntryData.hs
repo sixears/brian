@@ -35,15 +35,14 @@ import Natural ( length )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), SQLData,
-                                fromOnly )
+import Database.SQLite.Simple ( Connection, Only(Only), SQLData )
 
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Actress     ( insertEntryActresses_, mkActresses, readActresses )
-import Brian.BTag        ( btags, insertEntryTags_, readTags )
+import Brian.Actress     ( insertEntryActresses_, readActresses )
+import Brian.BTag        ( insertEntryTags_, readTags )
 import Brian.Entry       ( Entry(Entry), EntryRow, actresses, entryRow, tags,
                            title )
 import Brian.ID          ( ID(unID) )

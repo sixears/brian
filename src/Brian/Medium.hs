@@ -56,15 +56,20 @@ instance TextualPlus Medium where
 instance ToField Medium where
   toField m = toField (toText m)
 
-newtype MyException = MyException 𝕋
+newtype UnrecognizedMediumException = UnrecognizedMediumException 𝕋
   deriving (Show)
-instance Exception MyException
+instance Exception UnrecognizedMediumException
 
 instance FromField Medium where
-  fromField f = case fromField f of
-                  Ok "TV Movie"   → Ok TVMovie
-                  Ok "TV Series"  → Ok TVSeries
-                  Ok "Soap Opera" → Ok SoapOpera
-                  Ok e            → Errors [toException $ MyException e]
-                  Errors e        → Errors e
+  fromField f =
+    case fromField f of
+      Ok "Soap Opera"   → Ok SoapOpera
+      Ok "TV Series"    → Ok TVSeries
+      Ok "TV Movie"     → Ok TVMovie
+      Ok "Movie Serial" → Ok MovieSerial
+      Ok "Movie"        → Ok Movie
+      Ok "Other"        → Ok Other
+      Errors e          → Errors e
+      Ok e              → Errors [toException $ UnrecognizedMediumException e]
+
 -- that's all, folks! ----------------------------------------------------------

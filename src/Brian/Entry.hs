@@ -1,4 +1,5 @@
-{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE UnicodeSyntax   #-}
 module Brian.Entry
   ( Entry(Entry)
   , EntryRow

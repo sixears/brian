@@ -4,20 +4,18 @@ module Brian
   ) where
 
 import Base1T
+-- import Prelude ( undefined )
 
 -- base --------------------------------
 
-import Control.Applicative ( optional )
-import Control.Monad       ( (=<<) )
-import Data.Function       ( flip )
-import Data.Proxy          ( Proxy(Proxy) )
-import System.Environment  ( getArgs )
+import Control.Monad      ( (=<<) )
+import Data.Function      ( flip )
+import Data.Proxy         ( Proxy(Proxy) )
+import System.Environment ( getArgs )
 
 -- fpath -------------------------------
 
-import FPath.File      ( File(FileR) )
-import FPath.Parseable ( readM )
-import FPath.RelFile   ( relfile )
+import FPath.File ( File )
 
 -- HTTP --------------------------------
 
@@ -40,11 +38,6 @@ import MockIO.Log     ( DoMock(DoMock, NoMock), HasDoMock, MockIOClass )
 
 import MonadIO          ( say )
 import MonadIO.OpenFile ( readFileUTF8Lenient )
-
--- optparse-applicative ----------------
-
-import Options.Applicative ( CommandFields, Mod, Parser, argument, command,
-                             info, metavar, progDesc, subparser )
 
 -- safe-exceptions ---------------------
 
@@ -77,9 +70,13 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 
 import Brian.Actress     ( ActressRefTable, ActressTable )
 import Brian.BTag        ( TagRefTable, TagTable )
-import Brian.Entry       ( parseEntries, printEntry )
+import Brian.Entry       ( parseEntries )
 import Brian.EntryData   ( EntryTable, insertEntry, readEntry )
+import Brian.EntryFilter ( entryMatches )
 import Brian.ID          ( ID(ID) )
+import Brian.Options     ( EntryFilter,
+                           Mode(ModeCreate, ModeQuery, ModeReCreate), Options,
+                           dbFile, mode, optionsParser )
 import Brian.SQLite      ( Table, createTable, query_, reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError,
                            throwSQLMiscError )
@@ -116,68 +113,36 @@ buildTables conn recreate mck = do
 
 ------------------------------------------------------------
 
-data Mode = ModeCreate | ModeReCreate | ModeQuery
-
-------------------------------------------------------------
-
-data Options ε = Options { _mode      :: Mode
-                         , _dbFile    :: File
-                         , _inputFile :: 𝕄 File
-                         }
-
---------------------
-
-mode ∷ Lens' (Options ε) Mode
-mode = lens _mode (\ o m → o { _mode = m })
-
---------------------
-
-dbFile ∷ Lens' (Options ε) File
-dbFile = lens _dbFile (\ o f → o { _dbFile = f })
-
---------------------
-
-inputFile ∷ Lens' (Options ε) (𝕄 File)
-inputFile = lens _inputFile (\ o f → o { _inputFile = f })
-
-----------------------------------------
-
-optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε, Printable ε) ⇒
-                Parser (Options ε)
-optionsParser =
-  let mode_commands ∷ [Mod CommandFields Mode] =
-        [ command "create"
-                  (info (pure ModeCreate) (progDesc "build a new database"))
-        , command "recreate"
-                  (info (pure ModeReCreate) (progDesc "rebuild a database"))
-        , command "query"
-                  (info (pure ModeQuery) (progDesc "query the database"))
-        ]
-  in  Options ⊳ subparser (ю mode_commands)
-              ⊵ argument readM (metavar "SQLITE-DB")
-              ⊵ optional (argument readM $ metavar "INPUT-FILE")
-
-----------------------------------------
-
-dumpEntry ∷ ∀ ε ω μ .
-            (MonadIO μ, Default ω, MonadLog (Log ω) μ,
-             AsSQLiteError ε, Printable ε, MonadError ε μ,
-             MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-            Connection → DoMock → (Only ℤ) → μ ()
-dumpEntry c mck (Only eid) = do
+maybeDumpEntry ∷ ∀ ε ω μ .
+                 (MonadIO μ, Default ω, MonadLog (Log ω) μ,
+                  AsSQLiteError ε, Printable ε, MonadError ε μ,
+                  MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
+                 Connection → EntryFilter → DoMock → (Only ℤ) → μ ()
+maybeDumpEntry c q mck (Only eid) = do
   e ← readEntry c (ID $ fromIntegral eid) mck
   case e of
-    𝕵 e' → say $ [fmtT|%T\n\n----|] e'
+    𝕵 e' | entryMatches q e' → say $ [fmtT|%T\n\n----|] e'
+         | otherwise         → return ()
     𝕹    → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
 
+----------------------------------------
 
 queryEntries ∷ (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
                 HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
-               Connection → DoMock → μ ()
-queryEntries c mck = do
+               Connection → EntryFilter → DoMock → μ ()
+queryEntries c q mck = do
   let sql = "SELECT id FROM Entry"
   eids ← query_ Informational c sql [] mck
-  forM_ eids (dumpEntry c mck)
+  forM_ eids (maybeDumpEntry c q mck)
+
+----------------------------------------
+
+readBrian ∷ (MonadIO μ, AsIOError ε, MonadError ε μ) ⇒ 𝕄 File → μ [Tag 𝕋]
+readBrian input = do
+  t ← case input of
+    𝕵 f → readFileUTF8Lenient f
+    𝕹   → pack ⊳ brian
+  return $ parseTags t
 
 ----------------------------------------
 
@@ -189,25 +154,17 @@ doMain mck opts = do
     DoMock → throwUsageT "dry-run not yet implemented"
     NoMock → return ()
 
-  t    ← case opts ⊣ inputFile of
-           𝕵 f → readFileUTF8Lenient f
-           𝕹   → pack ⊳ brian
-
-  let ts ∷ [Tag 𝕋] = parseTags t
-
-  case opts ⊣ dbFile of
-    FileR r | r ≡ [relfile|-|] → parseEntries ts ≫ mapM_ printEntry
-    x                          → do
-      c ← liftIO $ open (toString x)
+  do
+      c ← liftIO $ open (toString $ opts ⊣ dbFile)
       flip finally (liftIO $ close c) $ do
-        let build cnn recreate mock = do
+        let build cnn recreate f mock = do
               buildTables cnn recreate mock
               let go e = insertEntry c e mock
-              parseEntries ts ≫ mapM_ go
+              readBrian f ≫ parseEntries ≫ mapM_ go
         case opts ⊣ mode of
-          ModeCreate   → build c NoReCreateTables mck
-          ModeReCreate → build c ReCreateTables   mck
-          ModeQuery    → queryEntries c mck
+          ModeQuery    q → queryEntries c q mck
+          ModeCreate   f → build c NoReCreateTables f mck
+          ModeReCreate f → build c ReCreateTables   f mck
 
 ----------------------------------------
 
