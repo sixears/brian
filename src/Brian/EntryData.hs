@@ -135,7 +135,7 @@ readEntry conn eid mck = do
     [(ttle,mdm,desc)] → do
       tgs  ← readTags      conn eid mck
       acts ← readActresses conn eid mck
-      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc
+      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc 𝕹
 
     xs                    →
       throwSQLMiscError $ [fmtT|too many (%d) entries found for %d|]

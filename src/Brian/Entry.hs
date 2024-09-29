@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE UnicodeSyntax   #-}
 module Brian.Entry
   ( Entry(Entry)
@@ -15,19 +16,24 @@ module Brian.Entry
   ) where
 
 import Base1T
+import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
-import Control.Applicative ( Alternative )
+import Control.Applicative ( Alternative, optional )
+import Control.Monad.Fail  ( MonadFail(fail) )
 import Data.Either         ( partitionEithers )
 import Data.List           ( filter, takeWhile )
-import Data.Maybe          ( catMaybes )
+import Data.Maybe          ( catMaybes, fromMaybe )
 import System.IO           ( putStrLn )
+import Text.Read           ( read )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( char, noneOf, string )
-import Text.Parser.Combinators ( eof, sepBy, (<?>) )
+import Text.Parser.Char        ( CharParsing, anyChar, char, digit, noneOf,
+                                 notChar, string )
+import Text.Parser.Combinators ( eof, sepBy, sepBy1, (<?>) )
+import Text.Parser.Token       ( natural )
 
 -- sqlite-simple -----------------------
 
@@ -37,6 +43,14 @@ import Database.SQLite.Simple.ToField ( ToField(toField) )
 -- tagsoup -----------------------------
 
 import Text.HTML.TagSoup ( Tag, partitions )
+
+-- tasty-hunit -------------------------
+
+import Test.Tasty.HUnit ( assertFailure )
+
+-- tasty-plus --------------------------
+
+import TastyPlus ( assertListEq )
 
 -- text-printer ------------------------
 
@@ -51,14 +65,21 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError,
 
 -- text --------------------------------
 
-import Data.Text qualified as Text
-
-import Data.Text ( intercalate, pack, replace, unpack, unwords )
+import Data.Text qualified as T
 
 -- textual-plus ------------------------
 
 import TextualPlus                         ( parseText )
 import TextualPlus.Error.TextualParseError ( tparseToME' )
+
+-- trifecta ----------------------------
+
+import Text.Trifecta.Parser ( parseString )
+import Text.Trifecta.Result ( Result(Failure, Success) )
+
+-- trifecta-plus -----------------------
+
+import TrifectaPlus ( tParse )
 
 -- word-wrap ---------------------------
 
@@ -69,14 +90,17 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 --                     local imports                      --
 ------------------------------------------------------------
 
+import Brian.Description qualified as Description
+
 import Brian.Actress     ( Actresses )
 import Brian.BTag        ( BTags )
-import Brian.Description ( Description(Description), more )
+import Brian.Description ( Description(Description, unDescription), more )
+import Brian.Episode     ( Episode, epi, mkEpisode )
 import Brian.ID          ( ID(ID), toℤ )
-import Brian.Medium      ( Medium(Movie, SoapOpera) )
+import Brian.Medium      ( Medium(Movie, SoapOpera, TVSeries) )
 import Brian.Parsers     ( whitespace )
 import Brian.TagSoup     ( text, (≈), (≉) )
-import Brian.Title       ( Title, unTitle )
+import Brian.Title       ( Title(Title), unTitle )
 
 --------------------------------------------------------------------------------
 
@@ -86,34 +110,9 @@ data Entry = Entry { _recordNumber :: ID
                    , _actresses    :: Actresses
                    , _tags         :: BTags
                    , _description  :: Description
+                   , _episode      :: 𝕄 Episode
                    }
   deriving (Eq, Show)
-
-data EntryRow = EntryRow { _erRecordNumber :: ID
-                         , _erTitle        :: Title
-                         , _erMedium       :: 𝕄 Medium
-                         , _arActresses    :: Actresses
-                         , _erDescription  :: Description
-                         }
-
-entryRow ∷ Entry → EntryRow
-entryRow e = EntryRow (e ⊣ recordNumber)
-                  (e ⊣ title)
-                  (e ⊣ medium)
-                  (e ⊣ actresses)
-                  (e ⊣ description)
-
-instance ToRow EntryRow
-  where toRow (EntryRow rn tt md ac ds) =
-          toRow (rn, unTitle tt, md, toField ac, toField ds)
-
-instance ToRow Entry where
-  toRow e = toRow ( e ⊣ recordNumber
-                  , unTitle $ e ⊣ title
-                  , e ⊣ medium
-                  , toField (e ⊣ actresses)
-                  , toField (e ⊣ description)
-                  )
 
 recordNumber ∷ Lens' Entry ID
 recordNumber = lens _recordNumber (\ e n → e { _recordNumber = n })
@@ -133,6 +132,39 @@ tags = lens _tags (\ e as → e { _tags = as })
 description ∷ Lens' Entry Description
 description = lens _description (\ e d → e { _description = d })
 
+episode ∷ Lens' Entry (𝕄 Episode)
+episode = lens _episode (\ e d → e { _episode = d })
+
+------------------------------------------------------------
+
+data EntryRow = EntryRow { _erRecordNumber :: ID
+                         , _erTitle        :: Title
+                         , _erMedium       :: 𝕄 Medium
+                         , _arActresses    :: Actresses
+                         , _erDescription  :: Description
+                         , _erEpisode      :: 𝕄 Episode
+                         }
+
+entryRow ∷ Entry → EntryRow
+entryRow e = EntryRow (e ⊣ recordNumber)
+                      (e ⊣ title)
+                      (e ⊣ medium)
+                      (e ⊣ actresses)
+                      (e ⊣ description)
+                      (e ⊣ episode)
+
+instance ToRow EntryRow where
+  toRow (EntryRow rn tt md ac ds ep) =
+    toRow (rn, unTitle tt, md, toField ac, toField ds, toField ep)
+
+instance ToRow Entry where
+  toRow e = toRow ( e ⊣ recordNumber
+                  , unTitle $ e ⊣ title
+                  , e ⊣ medium
+                  , toField (e ⊣ actresses)
+                  , toField (e ⊣ description)
+                  )
+
 instance Printable Entry where
   print e =
     let mfmt xs f = case xs of [] → 𝕹; _ →  𝕵 $ f xs
@@ -143,9 +175,9 @@ instance Printable Entry where
                  , 𝕵 $ [fmtT|Actresses   : %T|]  (e ⊣ actresses)
                  , mfmt (e ⊣ tags)      [fmt|Tags        : %T|]
                  , 𝕵 $ [fmtT|Description : %t|]
-                       (wrap ∘ replace "\n" "\n\n  " ∘ toText $ e ⊣ description)
+                       (wrap∘ T.replace "\n" "\n\n  " ∘toText $ e ⊣ description)
                  ]
-    in P.text $ intercalate "\n" (catMaybes fields)
+    in P.text $ T.intercalate "\n" (catMaybes fields)
 
 entryParagraphs ∷ [Tag 𝕋] → [𝕋]
 entryParagraphs p =
@@ -157,16 +189,31 @@ parseEithers l r n = partitionEithers ⊳ (𝕷 ⊳ l ∤ 𝕽 ⊳ r) `sepBy` n
 
 instance TextualPlus Entry where
   textual' =
-    let
+    let {- epDParser =
+          (,) ⊳ optional (((,) ⊳ (string "Episode: \"" ⋫ (many (notChar '"') ⋪ string "\" ("))
+                     ⊵ ((read ⊳ some digit) `sepBy1` (char '.') ⋪ string ")")))
+              ⊵ (many anyChar) -}
         mkEntry (n,t,m,a,d,(gs,ds)) = do
           tgs ← ю ⊳ mapM (parseTextM "BTag*") gs
-          return $ Entry { _recordNumber = n
+{-
+          (e,d') ← case parseString epDParser ф (T.unpack $ unDescription d) of
+            Success x → return x
+            Failure e → fail $ show e
+-}
+          (e,d') ← case tParse @Episode (T.unpack $ unDescription d) of
+            Success e → return (𝕵 e, Description.fromLines (T.pack ⊳ ds))
+            Failure e → -- fail $ show e
+                        return (𝕹, d `more` (T.pack ⊳ ds))
+          traceShow ("d",d) $ traceShow ("e",e) $ return $ Entry { _recordNumber = n
                          , _title = t
                          , _medium = 𝕵 m
-                         , _description = d `more` (pack ⊳ ds)
+--                         , _description = (Description $ T.pack d') `more` (T.pack ⊳ ds)
+                         , _description = d'
                          , _actresses = a
                          , _tags = tgs
+                         , _episode = e
                          }
+        ҕ ∷ ∀ α η . (TextualPlus α, MonadFail η, CharParsing η) ⇒ 𝕊 → η α
         ҕ t = let end = (pure () ⋪ char '\n') ∤ eof
               in  string (t ⊕ ":") ⋫ whitespace ⋫ textual' ⋪ whitespace ⋪ end
         restOfLine = many $ noneOf "\n"
@@ -174,17 +221,17 @@ instance TextualPlus Entry where
                 ⊵ ҕ "Title"
                 ⊵ ҕ "Medium"
                 ⊵ ҕ "Actress"
-                ⊵ ҕ "Description"
-                ⊵ parseEithers (pack ⊳ (string "Tags: " ⋫ restOfLine))
+                ⊵ ҕ @Description "Description"
+                ⊵ parseEithers (T.pack ⊳ (string "Tags: " ⋫ restOfLine))
                                restOfLine (char '\n')
                 <?> "Entry") ≫ mkEntry
 
 parseEntry ∷ (MonadError ε η, AsTextualParseError ε) ⇒ [𝕋] → η Entry
 parseEntry ts =
-  case tparse' (intercalate "\n" ts) of
+  case tparse' (T.intercalate "\n" ts) of
     𝕽 e   → return e
     𝕷 err → throwAsTextualParseError "no parse Entry"
-                                     (toString err : (unpack ⊳ ts))
+                                     (toString err : (T.unpack ⊳ ts))
 
 parseEntries ∷ (AsTextualParseError ε, MonadError ε η) ⇒ [Tag 𝕋] → η [Entry]
 parseEntries ts =
@@ -195,73 +242,151 @@ printEntry ts = liftIO ∘ putStrLn $ [fmt|%T\n|] ts
 
 -- tests -----------------------------------------------------------------------
 
-checkT ∷ (TextualPlus α, Eq α, Show α) ⇒ 𝕋 → α → TestTree
+checkT ∷ 𝕋 → Entry → TestTree
 checkT input exp =
-  testCase ("parseText: " ⊕ (unpack $ Text.takeWhile (≢ '\n') input)) $
-    𝕽 exp @=? (tparseToME' ∘ parseText) input
+  let tname = T.unpack ∘ fromMaybe "--XX--" ∘ head $ T.lines input in
+  case (tparseToME' ∘ parseText) input of
+    𝕷 e → testCase (tname ⊕ ": parseText") $ assertFailure $ show e
+    𝕽 e →
+        let tt ∷ ∀ α . (Eq α, Show α) ⇒ TestName → Lens' Entry α → TestTree
+            tt nm ln = testCase nm $ exp ⊣ ln @=? e ⊣ ln
+        in testGroup tname $
+             [ tt "recordNumber" recordNumber
+             , tt "title"        title
+             , tt "medium"       medium
+             , tt "actresses"    actresses
+             , tt "tags"         tags
+             , tt "episode"      episode
+             , assertListEq "description"
+                            (T.lines ∘ unDescription $ exp ⊣ description)
+                            (T.lines ∘ unDescription $ e ⊣ description)
+             ]
 
 {-| unit tests -}
 tests ∷ TestTree
 tests =
-  let unlines = intercalate "\n"
+  let unlines = T.intercalate "\n"
   in  testGroup "Entry"
       [ let t = unlines [ "Record number: 1"
                         , "Title: Guiding Light"
                         , "Medium: Soap Opera"
                         , "Actress: Sherry Stringfield"
                         , "Description: Aired December of 1990."
-                        , unwords [ "Stringfield is kidnapped and held for"
-                                  , "ransom by her ex. Tied to a" ]
-                        , unwords [ "chair and gagged with white cloth between"
-                                  , "the teeth. Several good closeups. Ungagged"
-                                  , "for a phone call, then regagged on screen."
-                                  ]
-                        , unwords [ "Tags: country_us, gagtype_cleave,"
-                                  , "bonddesc_chair, onscreen_gagging" ]
+                        , T.unwords [ "Stringfield is kidnapped and held for"
+                                    , "ransom by her ex. Tied to a" ]
+                        , T.unwords [ "chair and gagged with white cloth"
+                                    , "between the teeth. Several good"
+                                    , "closeups. Ungagged for a phone call,"
+                                    , "then regagged on screen."
+                                    ]
+                        , T.unwords [ "Tags: country_us, gagtype_cleave,"
+                                    , "bonddesc_chair, onscreen_gagging" ]
                         ]
-          in checkT t
-          (Entry { _recordNumber = ID 1, _title = "Guiding Light"
-                 , _medium = 𝕵 SoapOpera, _actresses = ["Sherry Stringfield"]
-                 , _description = Description $
-                   unlines [ "Aired December of 1990."
-                           , unwords [ "Stringfield is kidnapped and held for"
-                                     , "ransom by her ex. Tied to a" ]
-                           , unwords [ "chair and gagged with white cloth"
-                                     , "between the teeth. Several good"
-                                     , "closeups. Ungagged for a phone call,"
-                                     , "then regagged on screen."
-                                     ]
-                           ]
-                 , _tags = [ "country_us", "gagtype_cleave", "bonddesc_chair"
-                           , "onscreen_gagging"]
-                 })
+         in checkT t
+                   (Entry { _recordNumber = ID 1, _title = "Guiding Light"
+                          , _medium = 𝕵 SoapOpera
+                          , _actresses = ["Sherry Stringfield"]
+                          , _description = Description $
+                            unlines [ "Aired December of 1990."
+                                    , T.unwords [ "Stringfield is kidnapped"
+                                                , "and held for ransom by her"
+                                                , "ex. Tied to a" ]
+                                    , T.unwords [ "chair and gagged with white"
+                                                , "cloth between the teeth."
+                                                , "Several good closeups."
+                                                , "Ungagged for a phone call,"
+                                                , "then regagged on screen."
+                                                ]
+                                    ]
+                          , _tags = [ "country_us", "gagtype_cleave"
+                                    , "bonddesc_chair", "onscreen_gagging"]
+                          , _episode = 𝕹
+                          })
+      , let t = unlines [ "Record number: 3"
+                        , "Title: The Amazing Spider-Man (1978) aka Spiderman"
+                        , "Medium: TV Series"
+                        , "Actress: Madeleine Stowe"
+                        , T.unwords [ "Description: Episode: \"Escort to"
+                                    , "Danger\" (1.06)" ]
+                        , T.unwords [ "As a kidnapped foreign"
+                                    , "princess, she is kidnapped by"
+                                    , "terrorists. She." ]
+                        , T.unwords [ "is sitting in a warehouse talking to one"
+                                    , "of her captors, and is" ]
+                        , T.unwords [ "gagged with white cloth between the"
+                                    , "teeth (on screen). Short scene," ]
+                        , T.unwords [ "but some pretty good closeups. She is"
+                                    , "wearing a purple sleeveless" ]
+                        , T.unwords [ "gown." ]
+                        , T.unwords [ "Tags: bonddesc_anklestogether,"
+                                    , "bonddesc_handsbehind, gagtype_cleave,"
+                                    , "onscreen_gagging, onscreen_tying,"
+                                    , "outfit_skirt, restraint_rope, country_us"
+                                    ]
+                        ]
+         in checkT t
+                   (Entry { _recordNumber = ID 3
+                          , _title =
+                            Title $ T.unwords [ "The Amazing Spider-Man (1978)"
+                                              , "aka Spiderman" ]
+                          , _medium = 𝕵 TVSeries
+                          , _actresses = ["Madeleine Stowe"]
+                          , _description = Description $
+                              unlines [ T.unwords
+                                          [ "As a kidnapped foreign"
+                                          , "princess, she is kidnapped by"
+                                          , "terrorists. She."
+                                          ]
+                                      , T.unwords
+                                          [ "is sitting in a warehouse talking"
+                                          , "to one of her captors, and is" ]
+                                      , T.unwords
+                                          [ "gagged with white cloth between"
+                                          , "the teeth (on screen). Short"
+                                          , "scene,"
+                                          ]
+                                      , T.unwords
+                                          [ "but some pretty good closeups. She"
+                                          , "is wearing a purple sleeveless" ]
+                                      , T.unwords [ "gown." ]
+                                      ]
+                          , _tags = [ "bonddesc_anklestogether"
+                                    , "bonddesc_handsbehind", "gagtype_cleave"
+                                    , "onscreen_gagging", "onscreen_tying"
+                                    , "outfit_skirt", "restraint_rope"
+                                    , "country_us"]
+                          , _episode = 𝕵 (mkEpisode [1,6] (𝕵"Escort to Danger"))
+                          })
       , let t = unlines [ "Record number: 158"
                         , "Title: Ninja III: The Domination (1984)"
                         , "Medium: Movie"
                         , "Actress: Lucinda Dickey"
-                        , unwords [ "Description: About halfway through, she"
-                                  , "appears, ungagged, standing bound between"
-                                  , "two posts by ropes tied to leather cuffs"
-                                  , "around her outstretched wrists, and by two"
-                                  , "chains attached to a belt around her"
-                                  , "midsection, as she undergoes a ritual to"
-                                  , "call up the spirit of a ninja that has"
-                                  , "possessed her." ] ]
+                        , T.unwords [ "Description: About halfway through, she"
+                                    , "appears, ungagged, standing bound"
+                                    , "between two posts by ropes tied to"
+                                    , "leather cuffs around her outstretched"
+                                    , "wrists, and by two chains attached to a"
+                                    , "belt around her midsection, as she"
+                                    , "undergoes a ritual to call up the spirit"
+                                    , "of a ninja that has possessed her."
+                                    ]
+                        ]
           in checkT t
           (Entry { _recordNumber = ID 158
                  , _title = "Ninja III: The Domination (1984)"
                  , _medium = 𝕵 Movie
                  , _actresses = ["Lucinda Dickey"]
                  , _description = Description $
-                     unwords [ "About halfway through, she appears, ungagged,"
-                             , "standing bound between two posts by ropes tied"
-                             , "to leather cuffs around her outstretched"
-                             , "wrists, and by two chains attached to a belt"
-                             , "around her midsection, as she undergoes a"
-                             , "ritual to call up the spirit of a ninja that"
-                             , "has possessed her."
-                             ]
+                     T.unwords [ "About halfway through, she appears, ungagged,"
+                               , "standing bound between two posts by ropes"
+                               , "tied to leather cuffs around her outstretched"
+                               , "wrists, and by two chains attached to a belt"
+                               , "around her midsection, as she undergoes a"
+                               , "ritual to call up the spirit of a ninja that"
+                               , "has possessed her."
+                               ]
                  , _tags = []
+                 , _episode = 𝕹
                  })
         ]
 

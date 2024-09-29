@@ -1,6 +1,6 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.Medium
-  ( Medium(Movie, SoapOpera)
+  ( Medium(..)
   ) where
 
 import Base1T

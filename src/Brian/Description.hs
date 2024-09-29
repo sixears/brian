@@ -1,6 +1,7 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.Description
   ( Description(Description)
+  , fromLines
   , more
   , unDescription
   ) where
@@ -45,9 +46,12 @@ instance ToField Description where
 instance FromField Description where
   fromField = Description ⩺ fromField
 
+fromLines ∷ [𝕋] → Description
+fromLines ls = Description (intercalate "\n" $ dropWhileEnd (≡"") ls)
+
 more ∷ Description → [𝕋] → Description
-more (Description d) ts =
-  Description (intercalate "\n" $ d:(dropWhileEnd (≡"") ts))
+more (Description d) ts = fromLines (d:ts)
+  -- Description (intercalate "\n" $ d:(dropWhileEnd (≡"") ts))
 
 -- tests -----------------------------------------------------------------------
 
