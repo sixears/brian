@@ -1,7 +1,6 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.Episode
   ( Episode
-  , epi
   , mkEpisode
   ) where
 
@@ -14,10 +13,8 @@ import Text.Read           ( read )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( CharParsing, anyChar, char, digit, noneOf,
-                                 notChar, string )
-import Text.Parser.Combinators ( eof, sepBy, sepBy1, (<?>) )
-import Text.Parser.Token       ( natural )
+import Text.Parser.Char        ( char, digit, string )
+import Text.Parser.Combinators ( sepBy1 )
 
 -- parser-plus -------------------------
 
@@ -37,7 +34,7 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus ( TextualPlus(textual'), parseText )
+import TextualPlus ( TextualPlus(textual') )
 
 --------------------------------------------------------------------------------
 
@@ -63,15 +60,13 @@ data Episode = Episode { _ename     :: 𝕄 EpisodeName
   deriving (Eq, Show)
 
 instance TextualPlus Episode where
-  textual' = (Episode ⊳ (string "Episode: " ⋫ (optional $ (EpisodeName ∘ T.pack) ⊳ dQuotedString ⋪ whitespaces))
-                     ⊵ (parens $ EpisodeID ⊳ (read ⊳ some digit) `sepBy1` (char '.')))
+  textual' =
+    let ep_name = optional $ (EpisodeName ∘ T.pack)⊳ dQuotedString ⋪ whitespaces
+        ep_id   = parens $ EpisodeID ⊳ (read ⊳ some digit) `sepBy1` (char '.')
+    in  string "Episode: " ⋫ (Episode ⊳ ep_name) ⊵ ep_id
 
 instance ToField Episode where
   toField (Episode en eid) = toField $ [fmtT|%T\t%t|] eid (maybe "" toText en)
-
-epi ∷ (𝕊, [ℕ])  → Episode
-epi (en, eids) =
-  Episode { _episodeID = EpisodeID eids, _ename = 𝕵 (EpisodeName $ T.pack en) }
 
 mkEpisode ∷ [ℕ] → 𝕄 𝕋 → Episode
 

@@ -51,7 +51,6 @@ fromLines ls = Description (intercalate "\n" $ dropWhileEnd (≡"") ls)
 
 more ∷ Description → [𝕋] → Description
 more (Description d) ts = fromLines (d:ts)
-  -- Description (intercalate "\n" $ d:(dropWhileEnd (≡"") ts))
 
 -- tests -----------------------------------------------------------------------
 

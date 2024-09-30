@@ -16,24 +16,20 @@ module Brian.Entry
   ) where
 
 import Base1T
-import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
-import Control.Applicative ( Alternative, optional )
-import Control.Monad.Fail  ( MonadFail(fail) )
+import Control.Applicative ( Alternative )
+import Control.Monad.Fail  ( MonadFail )
 import Data.Either         ( partitionEithers )
 import Data.List           ( filter, takeWhile )
 import Data.Maybe          ( catMaybes, fromMaybe )
 import System.IO           ( putStrLn )
-import Text.Read           ( read )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( CharParsing, anyChar, char, digit, noneOf,
-                                 notChar, string )
-import Text.Parser.Combinators ( eof, sepBy, sepBy1, (<?>) )
-import Text.Parser.Token       ( natural )
+import Text.Parser.Char        ( CharParsing, char, noneOf, string )
+import Text.Parser.Combinators ( eof, sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
@@ -74,7 +70,6 @@ import TextualPlus.Error.TextualParseError ( tparseToME' )
 
 -- trifecta ----------------------------
 
-import Text.Trifecta.Parser ( parseString )
 import Text.Trifecta.Result ( Result(Failure, Success) )
 
 -- trifecta-plus -----------------------
@@ -95,7 +90,7 @@ import Brian.Description qualified as Description
 import Brian.Actress     ( Actresses )
 import Brian.BTag        ( BTags )
 import Brian.Description ( Description(Description, unDescription), more )
-import Brian.Episode     ( Episode, epi, mkEpisode )
+import Brian.Episode     ( Episode, mkEpisode )
 import Brian.ID          ( ID(ID), toℤ )
 import Brian.Medium      ( Medium(Movie, SoapOpera, TVSeries) )
 import Brian.Parsers     ( whitespace )
@@ -189,25 +184,14 @@ parseEithers l r n = partitionEithers ⊳ (𝕷 ⊳ l ∤ 𝕽 ⊳ r) `sepBy` n
 
 instance TextualPlus Entry where
   textual' =
-    let {- epDParser =
-          (,) ⊳ optional (((,) ⊳ (string "Episode: \"" ⋫ (many (notChar '"') ⋪ string "\" ("))
-                     ⊵ ((read ⊳ some digit) `sepBy1` (char '.') ⋪ string ")")))
-              ⊵ (many anyChar) -}
-        mkEntry (n,t,m,a,d,(gs,ds)) = do
+    let mkEntry (n,t,m,a,d,(gs,ds)) = do
           tgs ← ю ⊳ mapM (parseTextM "BTag*") gs
-{-
-          (e,d') ← case parseString epDParser ф (T.unpack $ unDescription d) of
-            Success x → return x
-            Failure e → fail $ show e
--}
           (e,d') ← case tParse @Episode (T.unpack $ unDescription d) of
             Success e → return (𝕵 e, Description.fromLines (T.pack ⊳ ds))
-            Failure e → -- fail $ show e
-                        return (𝕹, d `more` (T.pack ⊳ ds))
-          traceShow ("d",d) $ traceShow ("e",e) $ return $ Entry { _recordNumber = n
+            Failure _ → return (𝕹, d `more` (T.pack ⊳ ds))
+          return $ Entry { _recordNumber = n
                          , _title = t
                          , _medium = 𝕵 m
---                         , _description = (Description $ T.pack d') `more` (T.pack ⊳ ds)
                          , _description = d'
                          , _actresses = a
                          , _tags = tgs
