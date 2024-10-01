@@ -120,6 +120,7 @@ btags ts = BTags $ BTag ⊳ ts
 ------------------------------------------------------------
 
 newtype TagsRow = TagsRow BTag
+  deriving (Show)
 
 instance ToRow TagsRow where
   toRow (TagsRow btag) = [SQLText $ unBTag btag]
@@ -217,7 +218,7 @@ insertEntryTags conn n tgs mck =
 ----------------------------------------
 
 readTags ∷ ∀ ε α ω μ .
-           (MonadIO μ, ToField α,
+           (MonadIO μ, ToField α, Show α,
             AsSQLiteError ε, Printable ε, MonadError ε μ,
             Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
            Connection → α → DoMock → μ BTags

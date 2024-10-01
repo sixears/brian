@@ -26,6 +26,10 @@ import Data.List           ( filter, takeWhile )
 import Data.Maybe          ( catMaybes, fromMaybe )
 import System.IO           ( putStrLn )
 
+-- lens --------------------------------
+
+import Control.Lens.Getter ( view )
+
 -- parsers -----------------------------
 
 import Text.Parser.Char        ( CharParsing, char, noneOf, string )
@@ -90,7 +94,8 @@ import Brian.Description qualified as Description
 import Brian.Actress     ( Actresses )
 import Brian.BTag        ( BTags )
 import Brian.Description ( Description(Description, unDescription), more )
-import Brian.Episode     ( Episode, mkEpisode )
+import Brian.Episode     ( Episode, EpisodeID(EpisodeID), EpisodeName, epID,
+                           epName, mkEpisode )
 import Brian.ID          ( ID(ID), toℤ )
 import Brian.Medium      ( Medium(Movie, SoapOpera, TVSeries) )
 import Brian.Parsers     ( whitespace )
@@ -137,8 +142,10 @@ data EntryRow = EntryRow { _erRecordNumber :: ID
                          , _erMedium       :: 𝕄 Medium
                          , _arActresses    :: Actresses
                          , _erDescription  :: Description
-                         , _erEpisode      :: 𝕄 Episode
+                         , _erEpisodeID    :: EpisodeID
+                         , _erEpisodeName  :: 𝕄 EpisodeName
                          }
+  deriving (Show)
 
 entryRow ∷ Entry → EntryRow
 entryRow e = EntryRow (e ⊣ recordNumber)
@@ -146,12 +153,14 @@ entryRow e = EntryRow (e ⊣ recordNumber)
                       (e ⊣ medium)
                       (e ⊣ actresses)
                       (e ⊣ description)
-                      (e ⊣ episode)
+                      (maybe (EpisodeID []) (view epID) (e ⊣ episode))
+                      (maybe 𝕹 (view epName) (e ⊣ episode))
 
 instance ToRow EntryRow where
-  toRow (EntryRow rn tt md ac ds ep) =
-    toRow (rn, unTitle tt, md, toField ac, toField ds, toField ep)
+  toRow (EntryRow rn tt md ac ds epid epn) =
+    toRow (rn, unTitle tt, md, toField ac, toField ds, toField epid,toField epn)
 
+{-
 instance ToRow Entry where
   toRow e = toRow ( e ⊣ recordNumber
                   , unTitle $ e ⊣ title
@@ -159,6 +168,7 @@ instance ToRow Entry where
                   , toField (e ⊣ actresses)
                   , toField (e ⊣ description)
                   )
+-}
 
 instance Printable Entry where
   print e =

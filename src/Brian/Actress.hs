@@ -120,6 +120,7 @@ mkActresses as = Actresses $ Actress ⊳ as
 ------------------------------------------------------------
 
 newtype ActressesRow = ActressesRow Actress
+  deriving (Show)
 
 instance ToRow ActressesRow where
   toRow (ActressesRow act) = [SQLText $ unActress act]
@@ -221,7 +222,7 @@ insertEntryActresses conn n acts mck =
 ----------------------------------------
 
 readActresses ∷ ∀ ε α ω μ .
-                (MonadIO μ, ToField α,
+                (MonadIO μ, ToField α, Show α,
                  AsSQLiteError ε, Printable ε, MonadError ε μ,
                  Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
                 Connection → α → DoMock → μ Actresses

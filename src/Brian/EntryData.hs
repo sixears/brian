@@ -5,7 +5,8 @@ module Brian.EntryData
   , readEntry
   ) where
 
-import Base1T hiding ( toList )
+import Base1T      hiding ( toList )
+import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
@@ -35,7 +36,7 @@ import Natural ( length )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, Only(Only), SQLData )
+import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), SQLData )
 
 ------------------------------------------------------------
 --                     local imports                      --
@@ -45,10 +46,11 @@ import Brian.Actress     ( insertEntryActresses_, readActresses )
 import Brian.BTag        ( insertEntryTags_, readTags )
 import Brian.Entry       ( Entry(Entry), EntryRow, actresses, entryRow, tags,
                            title )
+import Brian.Episode     ( Episode(Episode), EpisodeName, epi )
 import Brian.ID          ( ID(unID) )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
                            ColumnName, ColumnType(CTypeInteger, CTypeText),
-                           Table(columns, tName, type RowType), TableName,
+                           Table(columns, tName, type RowType),
                            insertTableRows_, query, withinTransaction )
 import Brian.SQLiteError ( AsSQLiteError, throwSQLMiscError )
 
@@ -76,18 +78,10 @@ instance Table EntryTable where
             :| [ ColumnDesc "title"       CTypeText []
                , ColumnDesc "medium"      CTypeText []
                , ColumnDesc "actresses"   CTypeText []
-               , ColumnDesc "description" CTypeText [] ]
-
-------------------------------------------------------------
-
-{- An insert description for a single row; the table, the data to insert
-   (potentially multiple rows; certainly ≥ 1); and any additional clauses
-   required. -}
-data Insert = Insert { _iTable      :: TableName
-                     , _iSQLDataMap :: NonEmpty SQLDataMap
-                     , _iExtra      :: 𝕄 𝕋
-                     }
-  deriving (Show)
+               , ColumnDesc "description" CTypeText []
+               , ColumnDesc "episodeid"   CTypeText []
+               , ColumnDesc "episodename" CTypeText []
+               ]
 
 ------------------------------------------------------------
 
@@ -110,7 +104,6 @@ insertEntry_ conn e mck = do
       return $ 𝕵 n
     _ → return 𝕹
 
-
 --------------------
 
 insertEntry ∷ ∀ ε ω μ .
@@ -128,14 +121,16 @@ readEntry ∷ ∀ ε ω μ .
              MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
             Connection → ID → DoMock → μ (𝕄 Entry)
 readEntry conn eid mck = do
-  let sql = "SELECT title,medium,description FROM Entry WHERE ID = ?"
+  let fields ∷ [𝕋]
+      fields = [ "title", "medium", "description", "episodeid", "episodename" ]
+      sql = Query $ [fmt|SELECT %L FROM Entry WHERE ID = ?|] fields
   query Informational conn sql (Only eid) [] mck ≫ \ case
     []                    → return 𝕹
 
-    [(ttle,mdm,desc)] → do
+    [(ttle,mdm,desc,epid,epname ∷ 𝕄 EpisodeName)] → traceShow ("epid",epid) $ do
       tgs  ← readTags      conn eid mck
       acts ← readActresses conn eid mck
-      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc 𝕹
+      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc (epi epid epname)
 
     xs                    →
       throwSQLMiscError $ [fmtT|too many (%d) entries found for %d|]

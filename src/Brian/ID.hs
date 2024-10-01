@@ -52,7 +52,7 @@ instance ToField ID where
 
 instance FromField ID where
   fromField f = case fromField @ℤ f of
-    Ok n     → Ok $ fromℤ n
-    Errors x → Errors x
+                  Ok n     → Ok $ fromℤ n
+                  Errors x → Errors x
 
 -- that's all, folks! ----------------------------------------------------------

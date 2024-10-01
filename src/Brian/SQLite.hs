@@ -7,7 +7,7 @@ module Brian.SQLite
   , ColumnType(..)
   , Table(..)
   , TableFlag(..)
-  , TableName
+    --  , TableName
   , columnID
   , createTable
   , execute
@@ -183,7 +183,7 @@ execute_ sev conn sql =
 ----------------------------------------
 
 query ∷ ∀ ε ξ χ ω μ .
-        (MonadIO μ, ToRow ξ, FromRow χ,
+        (MonadIO μ, ToRow ξ, FromRow χ, Show ξ,
          AsSQLiteError ε, Printable ε, MonadError ε μ,
          Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
         Severity → Connection → Query → ξ → [χ] → DoMock → μ [χ]
@@ -194,7 +194,7 @@ query sev conn sql r mock_value =
                  , Exception.Handler $ return ∘ toAsSQLiteError @ResultError
                  ]
       io       = ((SQLite.query conn sql r) `catches` handlers)
-  in  mkIOLME sev IOWrite ([fmtT|sqlqy %w|] sql) mock_value io
+  in  mkIOLME sev IOWrite ([fmtT|sqlqy %w %w|] sql r) mock_value io
 
 ----------------------------------------
 
@@ -267,7 +267,8 @@ withinTransaction conn mck io = do
 ----------------------------------------
 
 insertTableRows_ ∷ ∀ ε α β ω μ .
-                   (MonadIO μ, Table α, ToRow (RowType α), FromRow β,
+                   (MonadIO μ,
+                    Table α, ToRow (RowType α), FromRow β, Show (RowType α),
                     AsSQLiteError ε, Printable ε, MonadError ε μ,
                     Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
                    Severity → Proxy α → Connection → [RowType α] → 𝕋 → DoMock
@@ -282,7 +283,8 @@ insertTableRows_ sev p conn rows extra mck = do
 ----------------------------------------
 
 insertTableRows ∷ ∀ ε α β ω μ .
-                  (MonadIO μ, Table α, ToRow (RowType α), FromRow β,
+                  (MonadIO μ,
+                   Table α, ToRow (RowType α), FromRow β, Show (RowType α),
                    AsSQLiteError ε, Printable ε, MonadError ε μ,
                    Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
                   Severity → Proxy α → Connection → [RowType α] → 𝕋 → DoMock
