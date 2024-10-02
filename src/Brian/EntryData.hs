@@ -18,16 +18,16 @@ import Data.Map.Strict qualified as Map
 
 -- logging-effect ----------------------
 
-import Control.Monad.Log ( MonadLog, Severity(Informational) )
+import Control.Monad.Log ( MonadLog, Severity(Informational, Warning) )
 
--- logs-plus ---------------------------
+-- log-plus ----------------------------
 
-import Log ( Log, infoT )
+import Log ( Log )
 
 -- mockio-log --------------------------
 
 import MockIO.IOClass ( HasIOClass )
-import MockIO.Log     ( DoMock, HasDoMock )
+import MockIO.Log     ( DoMock(NoMock), HasDoMock, logio )
 
 -- natural -----------------------------
 
@@ -97,7 +97,7 @@ insertEntry_ conn e mck = do
 
   case row_ids of
     [(_, [Only (n ∷ ID)])] → do
-      infoT $ [fmt|inserted %d (%T)|] (unID n) name
+      logio Warning ([fmtT|inserted %d (%T)|] (unID n) name) NoMock
       insertEntryTags_ conn n (e ⊣ tags) mck
       insertEntryActresses_ conn n (e ⊣ actresses) mck
       return $ 𝕵 n

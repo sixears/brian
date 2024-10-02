@@ -42,6 +42,7 @@ import Brian.SQLiteError ( AsSQLiteError )
 
 data Mode = ModeCreate (𝕄 File)
           | ModeReCreate (𝕄 File)
+          | ModeAdd (𝕄 File)
           | ModeQuery EntryFilter
 
 ------------------------------------------------------------
@@ -65,16 +66,21 @@ dbFile = lens _dbFile (\ o f → o { _dbFile = f })
 optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε, Printable ε) ⇒
                 Parser (Options ε)
 optionsParser =
-  let mode_commands ∷ [Mod CommandFields Mode] =
+  let input_file = argument readM $ metavar "INPUT-FILE"
+      mode_commands ∷ [Mod CommandFields Mode] =
         [ command "create"
-                  (info (ModeCreate ⊳ optional (argument readM $ metavar "INPUT-FILE")) (progDesc "build a new database"))
+                  (info (ModeCreate ⊳ optional input_file)
+                        (progDesc "build a new database"))
         , command "recreate"
-                  (info (ModeReCreate ⊳ optional (argument readM $ metavar "INPUT-FILE")) (progDesc "rebuild a database"))
+                  (info (ModeReCreate ⊳ optional input_file)
+                        (progDesc "rebuild a database"))
+        , command "add"
+                  (info (ModeAdd ⊳ optional input_file)
+                        (progDesc "add to an existing database"))
         , command "query"
                   (info (ModeQuery ⊳ optParse) (progDesc "query the database"))
         ]
   in  Options ⊳ subparser (ю mode_commands)
               ⊵ argument readM (metavar "SQLITE-DB")
---              ⊵ optional (argument readM $ metavar "INPUT-FILE")
 
 -- that's all, folks! ----------------------------------------------------------

@@ -74,8 +74,8 @@ import Brian.EntryData   ( EntryTable, insertEntry, readEntry )
 import Brian.EntryFilter ( entryMatches )
 import Brian.ID          ( ID(ID) )
 import Brian.Options     ( EntryFilter,
-                           Mode(ModeCreate, ModeQuery, ModeReCreate), Options,
-                           dbFile, mode, optionsParser )
+                           Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
+                           Options, dbFile, mode, optionsParser )
 import Brian.SQLite      ( Table, createTable, query_, reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError,
                            throwSQLMiscError )
@@ -92,18 +92,19 @@ brian = liftIO $ openURL' "http://brianspage.com/query.php" "description=gag"
 
 ------------------------------------------------------------
 
-data ReCreateTables = ReCreateTables | NoReCreateTables
+data CreateTables = ReCreateTables | NoReCreateTables | NoCreateTables
 
 buildTables ∷ ∀ ε ω μ .
               (MonadIO μ,
                AsSQLiteError ε,AsTextualParseError ε,Printable ε,MonadError ε μ,
                MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-              Connection → ReCreateTables → DoMock → μ ()
+              Connection → CreateTables → DoMock → μ ()
 buildTables conn recreate mck = do
   let create ∷ Table α ⇒ Connection → Proxy α → DoMock → μ ()
       create = case recreate of
                  ReCreateTables   → reCreateTable
                  NoReCreateTables → createTable
+                 NoCreateTables   → \ _conn _proxy _mock → return ()
   create conn (Proxy ∷ Proxy EntryTable) mck
   create conn (Proxy ∷ Proxy TagTable) mck
   create conn (Proxy ∷ Proxy TagRefTable) mck
@@ -164,6 +165,7 @@ doMain mck opts = do
           ModeQuery    q → queryEntries c q mck
           ModeCreate   f → build c NoReCreateTables f mck
           ModeReCreate f → build c ReCreateTables   f mck
+          ModeAdd      f → build c NoCreateTables   f mck
 
 ----------------------------------------
 
