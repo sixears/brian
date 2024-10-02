@@ -7,6 +7,7 @@ module Brian.Entry
   , actresses
   , description
   , entryRow
+  , episode
   , medium
   , parseEntries
   , printEntry
@@ -164,16 +165,6 @@ instance ToRow EntryRow where
   toRow (EntryRow rn tt md ac ds epid epn) =
     toRow (rn, unTitle tt, md, toField ac, toField ds, toField epid,toField epn)
 
-{-
-instance ToRow Entry where
-  toRow e = toRow ( e ⊣ recordNumber
-                  , unTitle $ e ⊣ title
-                  , e ⊣ medium
-                  , toField (e ⊣ actresses)
-                  , toField (e ⊣ description)
-                  )
--}
-
 instance Printable Entry where
   print e =
     let wd = 80
@@ -194,10 +185,7 @@ instance Printable Entry where
                  ]
     in P.text $ T.intercalate "\n" (catMaybes fields)
 
-entryParagraphs ∷ [Tag 𝕋] → [𝕋]
-entryParagraphs p =
-  filter (≢ "") $ text ⊳⊳ (\ ts → takeWhile (≉"br") ts : partitions (≈ "br") ts)
-                $ takeWhile (≉ "/blockquote") p
+----------------------------------------
 
 parseEithers ∷ Alternative ψ ⇒ ψ α → ψ β → ψ sep → ψ ([α], [β])
 parseEithers l r n = partitionEithers ⊳ (𝕷 ⊳ l ∤ 𝕽 ⊳ r) `sepBy` n
@@ -230,6 +218,8 @@ instance TextualPlus Entry where
                                restOfLine (char '\n')
                 <?> "Entry") ≫ mkEntry
 
+----------------------------------------
+
 parseEntry ∷ (MonadError ε η, AsTextualParseError ε) ⇒ [𝕋] → η Entry
 parseEntry ts =
   case tparse' (T.intercalate "\n" ts) of
@@ -237,9 +227,20 @@ parseEntry ts =
     𝕷 err → throwAsTextualParseError "no parse Entry"
                                      (toString err : (T.unpack ⊳ ts))
 
+----------------------------------------
+
+entryParagraphs ∷ [Tag 𝕋] → [𝕋]
+entryParagraphs p =
+  filter (≢ "") $ text ⊳⊳ (\ ts → takeWhile (≉"br") ts : partitions (≈ "br") ts)
+                $ takeWhile (≉ "/blockquote") p
+
+----------------------------------------
+
 parseEntries ∷ (AsTextualParseError ε, MonadError ε η) ⇒ [Tag 𝕋] → η [Entry]
 parseEntries ts =
   mapM parseEntry (entryParagraphs ⊳ partitions (≈ "blockquote") ts)
+
+----------------------------------------
 
 printEntry ∷ MonadIO μ ⇒ Entry → μ ()
 printEntry ts = liftIO ∘ putStrLn $ [fmt|%T\n|] ts
