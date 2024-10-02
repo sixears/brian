@@ -4,7 +4,6 @@ module Brian
   ) where
 
 import Base1T
-import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
@@ -121,7 +120,7 @@ maybeDumpEntry ∷ ∀ ε ω μ .
 maybeDumpEntry c q mck (Only eid) = do
   e ← readEntry c (ID $ fromIntegral eid) mck
   case e of
-    𝕵 e' | entryMatches q e' → traceShow (e,"e") $ say $ [fmtT|%T\n\n----|] e'
+    𝕵 e' | entryMatches q e' → say $ [fmtT|%T\n\n----|] e'
          | otherwise         → return ()
     𝕹    → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
 

@@ -5,8 +5,7 @@ module Brian.EntryData
   , readEntry
   ) where
 
-import Base1T      hiding ( toList )
-import Debug.Trace ( traceShow )
+import Base1T hiding ( toList )
 
 -- base --------------------------------
 
@@ -46,7 +45,7 @@ import Brian.Actress     ( insertEntryActresses_, readActresses )
 import Brian.BTag        ( insertEntryTags_, readTags )
 import Brian.Entry       ( Entry(Entry), EntryRow, actresses, entryRow, tags,
                            title )
-import Brian.Episode     ( Episode(Episode), EpisodeName, epi )
+import Brian.Episode     ( EpisodeName, epi )
 import Brian.ID          ( ID(unID) )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
                            ColumnName, ColumnType(CTypeInteger, CTypeText),
@@ -127,7 +126,7 @@ readEntry conn eid mck = do
   query Informational conn sql (Only eid) [] mck ≫ \ case
     []                    → return 𝕹
 
-    [(ttle,mdm,desc,epid,epname ∷ 𝕄 EpisodeName)] → traceShow ("epid",epid) $ do
+    [(ttle,mdm,desc,epid,epname ∷ 𝕄 EpisodeName)] → do
       tgs  ← readTags      conn eid mck
       acts ← readActresses conn eid mck
       return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc (epi epid epname)

@@ -30,6 +30,10 @@ import System.IO           ( putStrLn )
 
 import Control.Lens.Getter ( view )
 
+-- natural -----------------------------
+
+import Natural ( length )
+
 -- parsers -----------------------------
 
 import Text.Parser.Char        ( CharParsing, char, noneOf, string )
@@ -172,15 +176,21 @@ instance ToRow Entry where
 
 instance Printable Entry where
   print e =
-    let mfmt xs f = case xs of [] → 𝕹; _ →  𝕵 $ f xs
-        wrap = wrapText defaultWrapSettings { fillStrategy = FillIndent 2 } 80
+    let wd = 80
+        mfmt xs f = case xs of [] → 𝕹; _ →  𝕵 $ f xs
+        wrapn i = wrapText defaultWrapSettings { fillStrategy=FillIndent i }
+                           (fromIntegral wd)
         fields = [ 𝕵 $ [fmt|Record      : %06d|] (toℤ $ e ⊣ recordNumber)
                  , 𝕵 $ [fmt|Title       : %t|] (unTitle $ e ⊣ title)
                  , [fmt|Medium      : %T|] ⊳ (e ⊣ medium)
+                 , [fmt|Episode     : %T|] ⊳ (toText ⊳ e ⊣ episode)
                  , 𝕵 $ [fmtT|Actresses   : %T|]  (e ⊣ actresses)
-                 , mfmt (e ⊣ tags)      [fmt|Tags        : %T|]
-                 , 𝕵 $ [fmtT|Description : %t|]
-                       (wrap∘ T.replace "\n" "\n\n  " ∘toText $ e ⊣ description)
+                 , mfmt (wrapn 14 ∘ toText $ e ⊣ tags) [fmt|Tags        : %t|]
+                 , let descn = toText $ e ⊣ description
+                   in  𝕵 $ [fmtT|Description : %t|]
+                       (if length descn + 14 ≤ wd
+                        then descn
+                        else ("\n  " ⊕ wrapn 2 (T.replace "\n" "\n\n  " descn)))
                  ]
     in P.text $ T.intercalate "\n" (catMaybes fields)
 

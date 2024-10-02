@@ -15,7 +15,6 @@ import Prelude ( error )
 -- base ---------------------------------
 
 import Control.Applicative ( optional )
-import Data.Maybe          ( fromMaybe )
 import Text.Read           ( readEither )
 
 -- parsers -----------------------------
@@ -99,6 +98,17 @@ epName = lens _ename (\ e n → e { _ename = n })
 
 epID ∷ Lens' Episode (EpisodeID)
 epID = lens _episodeID (\ e i → e { _episodeID = i })
+
+--------------------
+
+instance Printable Episode where
+  print e = P.text $ case (toText ⊳ e ⊣ epName, toText $ e ⊣ epID) of
+                       (𝕹   , eid) → eid
+                       (𝕵 "", eid) → eid
+                       (𝕵 en, "" ) → en
+                       (𝕵 en, eid) → T.intercalate " - " [eid,en]
+
+--------------------
 
 instance TextualPlus Episode where
   textual' =
