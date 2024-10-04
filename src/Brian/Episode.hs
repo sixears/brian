@@ -1,7 +1,7 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.Episode
   ( Episode(Episode)
-  , EpisodeID(EpisodeID)
+  , EpisodeID(EpisodeID, unEpisodeID)
   , EpisodeName(EpisodeName)
   , epID
   , epName
