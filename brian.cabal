@@ -42,7 +42,6 @@ build-type:          Simple
 -- Constraint on the version of Cabal needed to build this package.
 cabal-version:       >=1.10
 
-
 library
   ghc-options:         -W -Wall -fhelpful-errors
   -- Modules exported by the library.
@@ -51,10 +50,12 @@ library
   -- modules included in this library but not exported.
   other-modules:       Brian.Actress
                      , Brian.BTag
+                     , Brian.Day
                      , Brian.Description
                      , Brian.Entry
                      , Brian.EntryData
                      , Brian.EntryFilter
+                     , Brian.Episode
                      , Brian.Exceptions
                      , Brian.ID
                      , Brian.Medium
@@ -95,7 +96,7 @@ library
                      , logging-effect, mtl, optparse-applicative, parsers
                      , regex, regex-with-pcre, safe-exceptions, split
                      , sqlite-simple, tagsoup, tasty-hunit, text, text-printer
-                     , trifecta, word-wrap
+                     , time, trifecta, word-wrap
 
                      , base1t        >= 0.0.6.0
                      , fpath         >= 1.3.5.0
@@ -117,5 +118,33 @@ library
 
   -- Base language which the package is written in.
   default-language:    Haskell2010
+
+-------------------------------------------------------------------------------
+
+executable brian
+  ghc-options:        -O2 -W -Wall -fhelpful-errors
+  hs-source-dirs:     bin
+  main-is:            brian.hs
+  build-depends:      brian
+
+                 --     logging-effect, optparse-applicative, pcre, regex
+                 -- , regex-with-pcre, text, unordered-containers
+
+                 -- , base1
+                 -- , log-plus      >= 0.0.4.4
+                 -- , mockio-log    >= 0.1.3.1
+                 -- , monadio-plus  >= 2.5.3.0
+                 -- , optparse-plus
+                 -- , stdmain
+
+  default-extensions: NoImplicitPrelude
+                 -- , ImportQualifiedPost
+                 -- , OverloadedStrings
+                 -- , QuasiQuotes
+                 -- , ScopedTypeVariables
+                 -- , TypeApplications
+                 -- , UnicodeSyntax
+
+  default-language:   Haskell2010
 
 -------------------------------------------------------------------------------

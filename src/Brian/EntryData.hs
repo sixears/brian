@@ -18,7 +18,7 @@ import Data.Map.Strict qualified as Map
 
 -- logging-effect ----------------------
 
-import Control.Monad.Log ( MonadLog, Severity(Informational, Warning) )
+import Control.Monad.Log ( MonadLog, Severity(Informational) )
 
 -- log-plus ----------------------------
 
@@ -37,12 +37,18 @@ import Natural ( length )
 
 import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), SQLData )
 
+-- time --------------------------------
+
+import Data.Time.Clock          ( getCurrentTime, utctDay )
+import Data.Time.Format.ISO8601 ( iso8601ParseM, iso8601Show )
+
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
 
 import Brian.Actress     ( insertEntryActresses_, readActresses )
 import Brian.BTag        ( insertEntryTags_, readTags )
+import Brian.Day         ( Day )
 import Brian.Entry       ( Entry(Entry), EntryRow, actresses, entryRow, tags,
                            title )
 import Brian.Episode     ( EpisodeName, epi )
@@ -80,6 +86,7 @@ instance Table EntryTable where
                , ColumnDesc "description" CTypeText []
                , ColumnDesc "episodeid"   CTypeText []
                , ColumnDesc "episodename" CTypeText []
+               , ColumnDesc "entrydate"   CTypeInteger []
                ]
 
 ------------------------------------------------------------
@@ -88,16 +95,18 @@ insertEntry_ ∷ ∀ ε ω μ .
                (MonadIO μ, Default ω, MonadLog (Log ω) μ,
                 AsSQLiteError ε, Printable ε, MonadError ε μ,
                 MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-               Connection → Entry → DoMock → μ (𝕄 ID)
-insertEntry_ conn e mck = do
+               Connection → Day → Entry → DoMock → μ (𝕄 ID)
+insertEntry_ conn d e mck = do
+-- XXX Entry Date
+
   let name  = e ⊣ title
   row_ids ← insertTableRows_ Informational (Proxy ∷ Proxy EntryTable) conn
-                             [entryRow e]
+                             [entryRow d e]
                              "ON CONFLICT (id) DO NOTHING RETURNING (id)" mck
 
   case row_ids of
     [(_, [Only (n ∷ ID)])] → do
-      logio Warning ([fmtT|inserted %d (%T)|] (unID n) name) NoMock
+      logio Informational ([fmtT|inserted %d (%T)|] (unID n) name) NoMock
       insertEntryTags_ conn n (e ⊣ tags) mck
       insertEntryActresses_ conn n (e ⊣ actresses) mck
       return $ 𝕵 n
@@ -109,8 +118,8 @@ insertEntry ∷ ∀ ε ω μ .
               (MonadIO μ, Default ω, MonadLog (Log ω) μ,
                AsSQLiteError ε, Printable ε, MonadError ε μ,
                MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-              Connection → Entry → DoMock → μ (𝕄 ID)
-insertEntry conn e mck = withinTransaction conn mck $ insertEntry_ conn e mck
+              Connection → Day → Entry → DoMock → μ (𝕄 ID)
+insertEntry conn d e mck= withinTransaction conn mck $ insertEntry_ conn d e mck
 
 ----------------------------------------
 
@@ -121,15 +130,16 @@ readEntry ∷ ∀ ε ω μ .
             Connection → ID → DoMock → μ (𝕄 Entry)
 readEntry conn eid mck = do
   let fields ∷ [𝕋]
-      fields = [ "title", "medium", "description", "episodeid", "episodename" ]
+      fields = [ "title", "medium", "description", "episodeid", "episodename"
+               , "entrydate" ]
       sql = Query $ [fmt|SELECT %L FROM Entry WHERE ID = ?|] fields
   query Informational conn sql (Only eid) [] mck ≫ \ case
     []                    → return 𝕹
 
-    [(ttle,mdm,desc,epid,epname ∷ 𝕄 EpisodeName)] → do
+    [(ttle,mdm,desc,epid,epname{- ∷ 𝕄 EpisodeName -},edate)] → do
       tgs  ← readTags      conn eid mck
       acts ← readActresses conn eid mck
-      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc (epi epid epname)
+      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc (epi epid epname) edate
 
     xs                    →
       throwSQLMiscError $ [fmtT|too many (%d) entries found for %d|]

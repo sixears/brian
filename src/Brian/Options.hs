@@ -24,7 +24,12 @@ import FPath.Parseable ( readM )
 -- optparse-applicative ----------------
 
 import Options.Applicative ( CommandFields, Mod, Parser, argument, command,
-                             info, metavar, progDesc, subparser )
+                             help, info, long, metavar, option, progDesc, short,
+                             subparser, value )
+
+-- optparse-plus -----------------------
+
+import OptParsePlus qualified
 
 -- textual-plus ------------------------
 
@@ -34,15 +39,16 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 --                     local imports                      --
 ------------------------------------------------------------
 
+import Brian.Day         ( Day )
 import Brian.EntryFilter ( EntryFilter )
 import Brian.OptParser   ( optParse )
 import Brian.SQLiteError ( AsSQLiteError )
 
 --------------------------------------------------------------------------------
 
-data Mode = ModeCreate (𝕄 File)
-          | ModeReCreate (𝕄 File)
-          | ModeAdd (𝕄 File)
+data Mode = ModeCreate (𝕄 File) (𝕄 Day)
+          | ModeReCreate (𝕄 File) (𝕄 Day)
+          | ModeAdd (𝕄 File) (𝕄 Day)
           | ModeQuery EntryFilter
 
 ------------------------------------------------------------
@@ -67,15 +73,20 @@ optionsParser ∷ (AsSQLiteError ε, AsTextualParseError ε, Printable ε) ⇒
                 Parser (Options ε)
 optionsParser =
   let input_file = argument readM $ metavar "INPUT-FILE"
+      entry_date = option OptParsePlus.readM (ю [ long "entry-date"
+                                                , short 'd',help "entry-date" ])
       mode_commands ∷ [Mod CommandFields Mode] =
         [ command "create"
-                  (info (ModeCreate ⊳ optional input_file)
+                  (info (ModeCreate ⊳ optional input_file
+                                    ⊵ optional entry_date)
                         (progDesc "build a new database"))
         , command "recreate"
-                  (info (ModeReCreate ⊳ optional input_file)
+                  (info (ModeReCreate ⊳ optional input_file
+                                      ⊵ optional entry_date)
                         (progDesc "rebuild a database"))
         , command "add"
-                  (info (ModeAdd ⊳ optional input_file)
+                  (info (ModeAdd ⊳ optional input_file
+                                 ⊵ optional entry_date)
                         (progDesc "add to an existing database"))
         , command "query"
                   (info (ModeQuery ⊳ optParse) (progDesc "query the database"))

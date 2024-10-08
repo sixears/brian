@@ -77,6 +77,11 @@ import Data.Text qualified as T
 import TextualPlus                         ( parseText )
 import TextualPlus.Error.TextualParseError ( tparseToME' )
 
+-- time --------------------------------
+
+import Data.Time.Clock          ( getCurrentTime, utctDay )
+import Data.Time.Format.ISO8601 ( iso8601ParseM, iso8601Show )
+
 -- trifecta ----------------------------
 
 import Text.Trifecta.Result ( Result(Failure, Success) )
@@ -98,6 +103,7 @@ import Brian.Description qualified as Description
 
 import Brian.Actress     ( Actresses )
 import Brian.BTag        ( BTags )
+import Brian.Day         ( Day )
 import Brian.Description ( Description(Description, unDescription), more )
 import Brian.Episode     ( Episode, EpisodeID(EpisodeID), EpisodeName, epID,
                            epName, mkEpisode )
@@ -116,6 +122,7 @@ data Entry = Entry { _recordNumber :: ID
                    , _tags         :: BTags
                    , _description  :: Description
                    , _episode      :: 𝕄 Episode
+                   , _entryDate    :: Day
                    }
   deriving (Eq, Show)
 
@@ -140,30 +147,10 @@ description = lens _description (\ e d → e { _description = d })
 episode ∷ Lens' Entry (𝕄 Episode)
 episode = lens _episode (\ e d → e { _episode = d })
 
-------------------------------------------------------------
+entryDate ∷ Lens' Entry Day
+entryDate = lens _entryDate (\ e d → e { _entryDate = d })
 
-data EntryRow = EntryRow { _erRecordNumber :: ID
-                         , _erTitle        :: Title
-                         , _erMedium       :: 𝕄 Medium
-                         , _arActresses    :: Actresses
-                         , _erDescription  :: Description
-                         , _erEpisodeID    :: EpisodeID
-                         , _erEpisodeName  :: 𝕄 EpisodeName
-                         }
-  deriving (Show)
-
-entryRow ∷ Entry → EntryRow
-entryRow e = EntryRow (e ⊣ recordNumber)
-                      (e ⊣ title)
-                      (e ⊣ medium)
-                      (e ⊣ actresses)
-                      (e ⊣ description)
-                      (maybe (EpisodeID []) (view epID) (e ⊣ episode))
-                      (maybe 𝕹 (view epName) (e ⊣ episode))
-
-instance ToRow EntryRow where
-  toRow (EntryRow rn tt md ac ds epid epn) =
-    toRow (rn, unTitle tt, md, toField ac, toField ds, toField epid,toField epn)
+----------------------------------------
 
 instance Printable Entry where
   print e =
@@ -172,6 +159,7 @@ instance Printable Entry where
         wrapn i = wrapText defaultWrapSettings { fillStrategy=FillIndent i }
                            (fromIntegral wd)
         fields = [ 𝕵 $ [fmt|Record      : %06d|] (toℤ $ e ⊣ recordNumber)
+                 , 𝕵 $ [fmt|EntryDate   : %T|] (e ⊣ entryDate)
                  , 𝕵 $ [fmt|Title       : %t|] (unTitle $ e ⊣ title)
                  , [fmt|Medium      : %T|] ⊳ (e ⊣ medium)
                  , [fmt|Episode     : %T|] ⊳ (toText ⊳ e ⊣ episode)
@@ -181,9 +169,37 @@ instance Printable Entry where
                    in  𝕵 $ [fmtT|Description : %t|]
                        (if length descn + 14 ≤ wd
                         then descn
-                        else ("\n  " ⊕ wrapn 2 (T.replace "\n" "\n\n  " descn)))
+                        else "\n  " ⊕ wrapn 2 (T.replace "\n" "\n\n  " descn))
                  ]
     in P.text $ T.intercalate "\n" (catMaybes fields)
+
+------------------------------------------------------------
+
+data EntryRow = EntryRow { _erRecordNumber :: ID
+                         , _erTitle        :: Title
+                         , _erMedium       :: 𝕄 Medium
+                         , _arActresses    :: Actresses
+                         , _erDescription  :: Description
+                         , _erEpisodeID    :: EpisodeID
+                         , _erEpisodeName  :: 𝕄 EpisodeName
+                         , _erEntryDate    :: Day
+                         }
+  deriving (Show)
+
+entryRow ∷ Day → Entry → EntryRow
+entryRow d e = EntryRow (e ⊣ recordNumber)
+                        (e ⊣ title)
+                        (e ⊣ medium)
+                        (e ⊣ actresses)
+                        (e ⊣ description)
+                        (maybe (EpisodeID []) (view epID) (e ⊣ episode))
+                        (maybe 𝕹 (view epName) (e ⊣ episode))
+                        d
+
+instance ToRow EntryRow where
+  toRow (EntryRow rn tt md ac ds epid epn ed) =
+    toRow (rn, unTitle tt, md, toField ac, toField ds, toField epid,toField epn,
+           toField ed)
 
 ----------------------------------------
 
