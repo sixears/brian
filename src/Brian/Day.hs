@@ -1,6 +1,7 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.Day
   ( Day(Day)
+  , epoch
   ) where
 
 import Base1T
@@ -31,6 +32,10 @@ import Database.SQLite.Simple.ToField   ( ToField(toField) )
 -- text-printer ------------------------
 
 import Text.Printer qualified as P
+
+-- textual-plus ------------------------
+
+import TextualPlus ( TextualPlus(textual') )
 
 -- time --------------------------------
 
@@ -63,5 +68,7 @@ instance OptReader Day where
   readM =
     let noparse s = [fmt|failed to parse '%s' as Day|] s
     in  eitherReader $ \ s → maybe (𝕷 $ noparse s) 𝕽 $ parseISO8601 s
+
+epoch = Day $ OrdinalDate.fromOrdinalDate 1970 1
 
 -- that's all, folks! ----------------------------------------------------------

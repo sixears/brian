@@ -99,6 +99,7 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 --                     local imports                      --
 ------------------------------------------------------------
 
+import Brian.Day         qualified as Day
 import Brian.Description qualified as Description
 
 import Brian.Actress     ( Actresses )
@@ -208,18 +209,19 @@ parseEithers l r n = partitionEithers ⊳ (𝕷 ⊳ l ∤ 𝕽 ⊳ r) `sepBy` n
 
 instance TextualPlus Entry where
   textual' =
-    let mkEntry (n,t,m,a,d,(gs,ds)) = do
+    let mkEntry (rn,tt,md,ac,dn,(gs,ds)) = do
           tgs ← ю ⊳ mapM (parseTextM "BTag*") gs
-          (e,d') ← case tParse @Episode (T.unpack $ unDescription d) of
+          (ep,dn') ← case tParse @Episode (T.unpack $ unDescription dn) of
             Success e → return (𝕵 e, Description.fromLines (T.pack ⊳ ds))
-            Failure _ → return (𝕹, d `more` (T.pack ⊳ ds))
-          return $ Entry { _recordNumber = n
-                         , _title = t
-                         , _medium = 𝕵 m
-                         , _description = d'
-                         , _actresses = a
-                         , _tags = tgs
-                         , _episode = e
+            Failure _ → return (𝕹, dn `more` (T.pack ⊳ ds))
+          return $ Entry { _recordNumber = rn
+                         , _title        = tt
+                         , _medium       = 𝕵 md
+                         , _actresses    = ac
+                         , _description  = dn'
+                         , _tags         = tgs
+                         , _episode      = ep
+                         , _entryDate    = Day.epoch
                          }
         ҕ ∷ ∀ α η . (TextualPlus α, MonadFail η, CharParsing η) ⇒ 𝕊 → η α
         ҕ t = let end = (pure () ⋪ char '\n') ∤ eof
@@ -322,6 +324,7 @@ tests =
                           , _tags = [ "country_us", "gagtype_cleave"
                                     , "bonddesc_chair", "onscreen_gagging"]
                           , _episode = 𝕹
+                          , _entryDate = Day.epoch
                           })
       , let t = unlines [ "Record number: 3"
                         , "Title: The Amazing Spider-Man (1978) aka Spiderman"
@@ -377,6 +380,7 @@ tests =
                                     , "outfit_skirt", "restraint_rope"
                                     , "country_us"]
                           , _episode = 𝕵 (mkEpisode [1,6] (𝕵"Escort to Danger"))
+                          , _entryDate = Day.epoch
                           })
       , let t = unlines [ "Record number: 158"
                         , "Title: Ninja III: The Domination (1984)"
@@ -408,6 +412,7 @@ tests =
                                ]
                  , _tags = []
                  , _episode = 𝕹
+                 , _entryDate = Day.epoch
                  })
         ]
 

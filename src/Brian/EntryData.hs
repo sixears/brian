@@ -37,11 +37,6 @@ import Natural ( length )
 
 import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), SQLData )
 
--- time --------------------------------
-
-import Data.Time.Clock          ( getCurrentTime, utctDay )
-import Data.Time.Format.ISO8601 ( iso8601ParseM, iso8601Show )
-
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
@@ -51,7 +46,7 @@ import Brian.BTag        ( insertEntryTags_, readTags )
 import Brian.Day         ( Day )
 import Brian.Entry       ( Entry(Entry), EntryRow, actresses, entryRow, tags,
                            title )
-import Brian.Episode     ( EpisodeName, epi )
+import Brian.Episode     ( epi )
 import Brian.ID          ( ID(unID) )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
                            ColumnName, ColumnType(CTypeInteger, CTypeText),
