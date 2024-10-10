@@ -10,7 +10,8 @@ import Base1T hiding ( toList )
 
 -- base --------------------------------
 
-import Data.Foldable ( and, or )
+import Data.Char     ( isAlpha )
+import Data.Foldable ( and, any, or )
 import Data.List     ( repeat, zip )
 import Data.Maybe    ( fromMaybe )
 import GHC.Exts      ( toList )
@@ -47,6 +48,10 @@ import Text.RE.TDFA ( matched )
 
 import Text.RE.PCRE.Text ()
 
+-- safe --------------------------------
+
+import Safe ( tailSafe )
+
 -- text --------------------------------
 
 import Data.Text qualified as T
@@ -63,9 +68,11 @@ import TextualPlus ( TextualPlus(textual'), parseTextual )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.Entry     ( Entry, actresses, description, episode, title )
-import Brian.Episode   ( EpisodeID(unEpisodeID), epID, epName )
-import Brian.OptParser ( OptParser(optParse) )
+import Brian.BTag        ( unBTags )
+import Brian.Description ( Description )
+import Brian.Entry       ( Entry, actresses, description, episode, tags, title )
+import Brian.Episode     ( EpisodeID(unEpisodeID), epID, epName )
+import Brian.OptParser   ( OptParser(optParse) )
 
 --------------------------------------------------------------------------------
 
@@ -162,8 +169,20 @@ instance OptParser EntryFilter where
 gFilt ∷ Entry → 𝔹
 gFilt e =
 -- XXX
-  let flt = [pcre|(?<!\\bno)\\s+gag|]
-  in  or [ matched $ toText(e ⊣ description) ?=~ flt ]
+--  let flt = [pcre|(?<!\\bno)\\s+gag|]
+  let -- descn_filter = [pcre|(?<!\b[Nn]o)\s+gag|] -- negative lookbehind
+      words ∷ 𝕋 → [𝕋] = T.split (ﬧ . isAlpha)
+      paired_words ∷ 𝕋 → [(𝕋,𝕋)] = (\ xs → zip xs (tailSafe xs)) ∘ words
+      descn_filter ∷ Description → 𝔹 =
+        let f ∷ (𝕋,𝕋) → 𝔹
+              = \ (a,b) → "gag" `T.isPrefixOf` (T.toLower b)
+                        ∧ (T.toLower a) ∉ ["no", "not"]
+        in  any f ∘ paired_words ∘ toText
+      tag_filter   = [pcre|^gagtype_(?!hand)|]    -- negative lookahead
+  in  or [ descn_filter (e ⊣ description) -- matched $ toText(e ⊣ description) ?=~ descn_filter
+         , any (\ t → matched $ t ?=~ tag_filter) $ toText ⩺ unBTags $ e ⊣ tags
+--         , any [ _ (toText t) | t ← unBTags $ e ⊣ tags ]
+         ]
 
 entryMatches ∷ EntryFilter → Entry → 𝔹
 entryMatches flt e =

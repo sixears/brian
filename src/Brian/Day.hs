@@ -5,12 +5,10 @@ module Brian.Day
   ) where
 
 import Base1T
-import Debug.Trace ( traceShow )
 
 -- base --------------------------------
 
 import Control.Monad.Fail ( MonadFail )
-import Data.Maybe         ( fromMaybe )
 
 -- mtl ---------------------------------
 
@@ -26,25 +24,19 @@ import OptParsePlus ( OptReader(readM) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple.FromField ( FromField(fromField), fieldData )
+import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
 -- text-printer ------------------------
 
 import Text.Printer qualified as P
 
--- textual-plus ------------------------
-
-import TextualPlus ( TextualPlus(textual') )
-
 -- time --------------------------------
 
 import Data.Time.Calendar.OrdinalDate qualified as OrdinalDate
 
 import Data.Time.Calendar.OrdinalDate ( fromOrdinalDate )
-import Data.Time.Format.ISO8601       ( FormatExtension(ExtendedFormat),
-                                        ISO8601(iso8601Format), calendarFormat,
-                                        iso8601ParseM, iso8601Show )
+import Data.Time.Format.ISO8601       ( iso8601ParseM, iso8601Show )
 
 --------------------------------------------------------------------------------
 
@@ -69,6 +61,7 @@ instance OptReader Day where
     let noparse s = [fmt|failed to parse '%s' as Day|] s
     in  eitherReader $ \ s → maybe (𝕷 $ noparse s) 𝕽 $ parseISO8601 s
 
+epoch ∷ Day
 epoch = Day $ OrdinalDate.fromOrdinalDate 1970 1
 
 -- that's all, folks! ----------------------------------------------------------

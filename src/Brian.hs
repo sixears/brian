@@ -65,7 +65,7 @@ import Text.HTML.TagSoup ( Tag, parseTags )
 
 -- text --------------------------------
 
-import Data.Text ( pack )
+import Data.Text qualified as T
 
 -- textual-plus ------------------------
 
@@ -143,7 +143,7 @@ maybeDumpEntry ∷ ∀ ε ω μ .
 maybeDumpEntry c q mck (Only eid) = do
   e ← readEntry c (ID $ fromIntegral eid) mck
   case e of
-    𝕵 e' | {- gFilt e' ∧ -} entryMatches q e' → say $ [fmtT|%T\n\n----|] e'
+    𝕵 e' | gFilt e' ∧ entryMatches q e' → say $ [fmtT|%T\n\n----|] e'
          | otherwise         → return ()
     𝕹    → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
 
@@ -156,8 +156,9 @@ queryEntries c q mck = do
   let sel = "SELECT id FROM Entry"
   eids ← case q ⊣ titleSTs of
               []  → query_ Informational c (Query sel) [] mck
-              [t] → let sql = Query $ [fmt|%t WHERE TITLE LIKE ?|] sel
-                    in  query Informational c sql [t] [] mck
+              ts  → let likes = T.intercalate " AND title LIKE " (const "?"⊳ ts)
+                        sql   = Query $ [fmt|%t WHERE title LIKE %t|] sel likes
+                    in  query Informational c sql ts [] mck
   forM_ eids (maybeDumpEntry c q mck)
 
 ----------------------------------------
@@ -167,7 +168,7 @@ readBrian ∷ (MonadIO μ, MonadLog (Log ω) μ, Default ω,HasIOClass ω,HasDoM
 readBrian input = do
   t ← case input of
     𝕵 f → readFileUTF8Lenient f
-    𝕹   → pack ⊳ brian
+    𝕹   → T.pack ⊳ brian
   return $ parseTags t
 
 ----------------------------------------

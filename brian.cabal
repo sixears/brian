@@ -94,7 +94,7 @@ library
   -- Other library packages from which modules are imported.
   build-depends:       base, containers, data-textual, HTTP, lens
                      , logging-effect, mtl, optparse-applicative, parsers
-                     , regex, regex-with-pcre, safe-exceptions, split
+                     , regex, regex-with-pcre, safe, safe-exceptions, split
                      , sqlite-simple, tagsoup, tasty-hunit, text, text-printer
                      , time, trifecta, word-wrap
 

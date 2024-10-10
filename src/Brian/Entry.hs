@@ -77,11 +77,6 @@ import Data.Text qualified as T
 import TextualPlus                         ( parseText )
 import TextualPlus.Error.TextualParseError ( tparseToME' )
 
--- time --------------------------------
-
-import Data.Time.Clock          ( getCurrentTime, utctDay )
-import Data.Time.Format.ISO8601 ( iso8601ParseM, iso8601Show )
-
 -- trifecta ----------------------------
 
 import Text.Trifecta.Result ( Result(Failure, Success) )

@@ -25,7 +25,7 @@ import FPath.Parseable ( readM )
 
 import Options.Applicative ( CommandFields, Mod, Parser, argument, command,
                              help, info, long, metavar, option, progDesc, short,
-                             subparser, value )
+                             subparser )
 
 -- optparse-plus -----------------------
 
