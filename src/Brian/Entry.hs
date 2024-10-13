@@ -411,6 +411,29 @@ tests =
                  })
         ]
 
+{-  EPISODE
+
+Record      : 012242
+EntryDate   : 2024-10-10
+Title       : CSI: Crime Scene Investigation aka C.S.I.
+Medium      : TV Series
+Actresses   : Kay Panabaker
+Tags        : bonddesc_blindfold, bonddesc_handsspread, gagtype_tape, restraint_tape
+Description :
+  Episode: "Built to Kill" Part 2 (7.2)
+
+  Lindsey (Panabaker), the daughter of series regular Catherine (Marg
+  Helgenberger) is abducted during a car accident. She is later shown on a still
+  image via a PC monitor, looking very helpless; she sits on a chair, hands duct
+  taped to the armrests, feet unbound, gagged with a wide strip of duct tape,
+  and blindfolded with more tape wrapped once around her head. The original
+  polaroid of her like this is shown earlier, at about 33mins (based on a 1hr
+  broadcast with commercials). Shortly afterwards the hideout is raided and she
+  is released; very realistic onscreen ungagging and un-blindfolding, with the
+  tape being slowly peeled off and pulling her skin back. It is clearly shown to
+  the camera that the tape had no "protection" for her lips or eyes.
+-}
+
 _test ∷ IO ExitCode
 _test = runTestTree tests
 

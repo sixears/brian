@@ -121,13 +121,14 @@ instance TextualPlus Episode where
           in  parens $ EpisodeID ⊳ (readN ⊳ some digit) `sepBy1` (char '.')
     in  string "Episode: " ⋫ (Episode ⊳ ep_name) ⊵ ep_id
 
--- instance ToField Episode where
---   toField (Episode en eid) = toField $ [fmtT|%T\t%t|] eid (maybe "" toText en)
+----------------------------------------
 
 mkEpisode ∷ [ℕ] → 𝕄 𝕋 → Episode
 
 mkEpisode eids en = Episode { _episodeID = EpisodeID eids
                             , _ename     = EpisodeName ⊳ en }
+
+----------------------------------------
 
 epi ∷ EpisodeID → 𝕄 EpisodeName → 𝕄 Episode
 epi (EpisodeID []) 𝕹                    = 𝕹

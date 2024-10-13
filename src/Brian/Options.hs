@@ -23,9 +23,9 @@ import FPath.Parseable ( readM )
 
 -- optparse-applicative ----------------
 
-import Options.Applicative ( CommandFields, Mod, Parser, argument, command,
-                             help, info, long, metavar, option, progDesc, short,
-                             subparser )
+import Options.Applicative ( CommandFields, Mod, Parser, argument, auto,
+                             command, help, info, long, metavar, option,
+                             progDesc, short, subparser )
 
 -- optparse-plus -----------------------
 
@@ -49,7 +49,7 @@ import Brian.SQLiteError ( AsSQLiteError )
 data Mode = ModeCreate (𝕄 File) (𝕄 Day)
           | ModeReCreate (𝕄 File) (𝕄 Day)
           | ModeAdd (𝕄 File) (𝕄 Day)
-          | ModeQuery EntryFilter
+          | ModeQuery EntryFilter (𝕄 ℤ)
 
 ------------------------------------------------------------
 
@@ -89,7 +89,7 @@ optionsParser =
                                  ⊵ optional entry_date)
                         (progDesc "add to an existing database"))
         , command "query"
-                  (info (ModeQuery ⊳ optParse) (progDesc "query the database"))
+                  (info (ModeQuery ⊳ optParse ⊵ optional (option auto (short 'y' ⊕ long "days" ⊕ help "look back n days' entries"))) (progDesc "query the database"))
         ]
   in  Options ⊳ subparser (ю mode_commands)
               ⊵ argument readM (metavar "SQLITE-DB")

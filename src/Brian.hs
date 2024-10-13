@@ -4,6 +4,7 @@ module Brian
   ) where
 
 import Base1T
+import Prelude ( (*) )
 
 -- base --------------------------------
 
@@ -73,7 +74,9 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 
 -- time --------------------------------
 
-import Data.Time.Clock ( getCurrentTime, utctDay )
+import Data.Time.Calendar       ( addDays )
+import Data.Time.Clock          ( getCurrentTime, utctDay )
+import Data.Time.Format.ISO8601 ( iso8601Show )
 
 ------------------------------------------------------------
 --                     local imports                      --
@@ -89,7 +92,7 @@ import Brian.ID          ( ID(ID) )
 import Brian.Options     ( EntryFilter,
                            Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
                            Options, dbFile, mode, optionsParser )
-import Brian.SQLite      ( Table, createTable, query, query_, reCreateTable )
+import Brian.SQLite      ( Table, createTable, query, reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError,
                            throwSQLMiscError )
 
@@ -151,14 +154,23 @@ maybeDumpEntry c q mck (Only eid) = do
 
 queryEntries ∷ (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
                 HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
-               Connection → EntryFilter → DoMock → μ ()
-queryEntries c q mck = do
+               Connection → EntryFilter → 𝕄 ℤ → DoMock → μ ()
+queryEntries c q d mck = do
   let sel = "SELECT id FROM Entry"
-  eids ← case q ⊣ titleSTs of
-              []  → query_ Informational c (Query sel) [] mck
-              ts  → let likes = T.intercalate " AND title LIKE " (const "?"⊳ ts)
-                        sql   = Query $ [fmt|%t WHERE title LIKE %t|] sel likes
-                    in  query Informational c sql ts [] mck
+  today ← liftIO $ utctDay ⊳ getCurrentTime
+  eids ← let ts           = q ⊣ titleSTs
+             like_clauses = const "title LIKE ?" ⊳ ts
+             (date_clause,date_datum) =
+               case d of
+                 𝕹 → ([],[])
+                 𝕵 d' → (["EntryDate > ?"],
+                         [T.pack ∘ iso8601Show $ addDays (-1*d') today])
+             clauses      = date_clause ⊕ like_clauses
+             sql   = Query $
+               if clauses ≡ []
+               then sel
+               else [fmt|%t WHERE %t|] sel (T.intercalate " AND " clauses)
+         in  query Informational c sql (date_datum ⊕ ts) [] mck
   forM_ eids (maybeDumpEntry c q mck)
 
 ----------------------------------------
@@ -194,7 +206,7 @@ doMain mck opts = do
               warnIO' $ [fmt|inserted %d entries|] (length $ catMaybes ids)
               return ()
         case opts ⊣ mode of
-          ModeQuery    q   → queryEntries c q mck
+          ModeQuery    q d → queryEntries c q d mck
           ModeCreate   f d → build c d NoReCreateTables f mck
           ModeReCreate f d → build c d ReCreateTables   f mck
           ModeAdd      f d → build c d NoCreateTables   f mck

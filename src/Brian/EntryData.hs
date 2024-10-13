@@ -92,8 +92,6 @@ insertEntry_ ∷ ∀ ε ω μ .
                 MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
                Connection → Day → Entry → DoMock → μ (𝕄 ID)
 insertEntry_ conn d e mck = do
--- XXX Entry Date
-
   let name  = e ⊣ title
   row_ids ← insertTableRows_ Informational (Proxy ∷ Proxy EntryTable) conn
                              [entryRow d e]
@@ -131,7 +129,7 @@ readEntry conn eid mck = do
   query Informational conn sql (Only eid) [] mck ≫ \ case
     []                    → return 𝕹
 
-    [(ttle,mdm,desc,epid,epname{- ∷ 𝕄 EpisodeName -},edate)] → do
+    [(ttle,mdm,desc,epid,epname,edate)] → do
       tgs  ← readTags      conn eid mck
       acts ← readActresses conn eid mck
       return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc (epi epid epname) edate

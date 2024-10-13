@@ -144,7 +144,8 @@ insertColumns (toList → cols) =
 {- columns description for CREATE TABLE statements -}
 instance Printable ColumnDesc where
   print (ColumnDesc nm tp flgs) = P.text $
-    let x = [fmt|%T %T %t|] nm tp (Text.intercalate " " $ filter (≢ "") $ toText ⊳ flgs)
+    let x = [fmt|%T %T %t|]
+            nm tp (Text.intercalate " " $ filter (≢ "") $ toText ⊳ flgs)
     in x
 ------------------------------------------------------------
 
