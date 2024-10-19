@@ -1,16 +1,19 @@
 {-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE UnicodeSyntax   #-}
+
 module Brian.Entry
-  ( Entry(Entry)
+  ( Entry(Entry, _actresses, _description, _entryDate, _episode, _medium, _recordNumber, _tags, _title)
   , EntryRow
+  , EntryTable
   , actresses
   , description
   , entryRow
   , episode
+  , insertEntry
   , medium
   , parseEntries
   , printEntry
+  , readEntry
   , recordNumber
   , tags
   , title
@@ -24,12 +27,26 @@ import Control.Applicative ( Alternative )
 import Control.Monad.Fail  ( MonadFail )
 import Data.Either         ( partitionEithers )
 import Data.List           ( filter, takeWhile )
-import Data.Maybe          ( catMaybes, fromMaybe )
+import Data.Maybe          ( catMaybes )
+import Data.Proxy          ( Proxy(Proxy) )
 import System.IO           ( putStrLn )
 
 -- lens --------------------------------
 
 import Control.Lens.Getter ( view )
+
+-- logging-effect ----------------------
+
+import Control.Monad.Log ( MonadLog, Severity(Informational) )
+
+-- log-plus ----------------------------
+
+import Log ( Log )
+
+-- mockio-log --------------------------
+
+import MockIO.IOClass ( HasIOClass )
+import MockIO.Log     ( DoMock(NoMock), HasDoMock, logio )
 
 -- natural -----------------------------
 
@@ -42,20 +59,13 @@ import Text.Parser.Combinators ( eof, sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple         ( ToRow(toRow) )
+import Database.SQLite.Simple         ( Connection, Only(Only), Query(Query),
+                                        ToRow(toRow) )
 import Database.SQLite.Simple.ToField ( ToField(toField) )
 
 -- tagsoup -----------------------------
 
 import Text.HTML.TagSoup ( Tag, partitions )
-
--- tasty-hunit -------------------------
-
-import Test.Tasty.HUnit ( assertFailure )
-
--- tasty-plus --------------------------
-
-import TastyPlus ( assertListEq )
 
 -- text-printer ------------------------
 
@@ -71,11 +81,6 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError,
 -- text --------------------------------
 
 import Data.Text qualified as T
-
--- textual-plus ------------------------
-
-import TextualPlus                         ( parseText )
-import TextualPlus.Error.TextualParseError ( tparseToME' )
 
 -- trifecta ----------------------------
 
@@ -97,17 +102,22 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 import Brian.Day         qualified as Day
 import Brian.Description qualified as Description
 
-import Brian.Actress     ( Actresses )
-import Brian.BTag        ( BTags )
+import Brian.Actress     ( Actresses, insertEntryActresses_, readActresses )
+import Brian.BTag        ( BTags, insertEntryTags_, readTags )
 import Brian.Day         ( Day )
-import Brian.Description ( Description(Description, unDescription), more )
+import Brian.Description ( Description(unDescription), more )
 import Brian.Episode     ( Episode, EpisodeID(EpisodeID), EpisodeName, epID,
-                           epName, mkEpisode )
-import Brian.ID          ( ID(ID), toℤ )
-import Brian.Medium      ( Medium(Movie, SoapOpera, TVSeries) )
+                           epName, epi )
+import Brian.ID          ( ID(unID), toℤ )
+import Brian.Medium      ( Medium )
 import Brian.Parsers     ( whitespace )
+import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
+                           ColumnType(CTypeInteger, CTypeText),
+                           Table(columns, tName, type RowType),
+                           insertTableRows_, query, withinTransaction )
+import Brian.SQLiteError ( AsSQLiteError, throwSQLMiscError )
 import Brian.TagSoup     ( text, (≈), (≉) )
-import Brian.Title       ( Title(Title), unTitle )
+import Brian.Title       ( Title, unTitle )
 
 --------------------------------------------------------------------------------
 
@@ -258,189 +268,77 @@ parseEntries ts =
 printEntry ∷ MonadIO μ ⇒ Entry → μ ()
 printEntry ts = liftIO ∘ putStrLn $ [fmt|%T\n|] ts
 
--- tests -----------------------------------------------------------------------
+----------------------------------------
 
-checkT ∷ 𝕋 → Entry → TestTree
-checkT input exp =
-  let tname = T.unpack ∘ fromMaybe "--XX--" ∘ head $ T.lines input in
-  case (tparseToME' ∘ parseText) input of
-    𝕷 e → testCase (tname ⊕ ": parseText") $ assertFailure $ show e
-    𝕽 e →
-        let tt ∷ ∀ α . (Eq α, Show α) ⇒ TestName → Lens' Entry α → TestTree
-            tt nm ln = testCase nm $ exp ⊣ ln @=? e ⊣ ln
-        in testGroup tname $
-             [ tt "recordNumber" recordNumber
-             , tt "title"        title
-             , tt "medium"       medium
-             , tt "actresses"    actresses
-             , tt "tags"         tags
-             , tt "episode"      episode
-             , assertListEq "description"
-                            (T.lines ∘ unDescription $ exp ⊣ description)
-                            (T.lines ∘ unDescription $ e ⊣ description)
-             ]
+data EntryTable
 
-{-| unit tests -}
-tests ∷ TestTree
-tests =
-  let unlines = T.intercalate "\n"
-  in  testGroup "Entry"
-      [ let t = unlines [ "Record number: 1"
-                        , "Title: Guiding Light"
-                        , "Medium: Soap Opera"
-                        , "Actress: Sherry Stringfield"
-                        , "Description: Aired December of 1990."
-                        , T.unwords [ "Stringfield is kidnapped and held for"
-                                    , "ransom by her ex. Tied to a" ]
-                        , T.unwords [ "chair and gagged with white cloth"
-                                    , "between the teeth. Several good"
-                                    , "closeups. Ungagged for a phone call,"
-                                    , "then regagged on screen."
-                                    ]
-                        , T.unwords [ "Tags: country_us, gagtype_cleave,"
-                                    , "bonddesc_chair, onscreen_gagging" ]
-                        ]
-         in checkT t
-                   (Entry { _recordNumber = ID 1, _title = "Guiding Light"
-                          , _medium = 𝕵 SoapOpera
-                          , _actresses = ["Sherry Stringfield"]
-                          , _description = Description $
-                            unlines [ "Aired December of 1990."
-                                    , T.unwords [ "Stringfield is kidnapped"
-                                                , "and held for ransom by her"
-                                                , "ex. Tied to a" ]
-                                    , T.unwords [ "chair and gagged with white"
-                                                , "cloth between the teeth."
-                                                , "Several good closeups."
-                                                , "Ungagged for a phone call,"
-                                                , "then regagged on screen."
-                                                ]
-                                    ]
-                          , _tags = [ "country_us", "gagtype_cleave"
-                                    , "bonddesc_chair", "onscreen_gagging"]
-                          , _episode = 𝕹
-                          , _entryDate = Day.epoch
-                          })
-      , let t = unlines [ "Record number: 3"
-                        , "Title: The Amazing Spider-Man (1978) aka Spiderman"
-                        , "Medium: TV Series"
-                        , "Actress: Madeleine Stowe"
-                        , T.unwords [ "Description: Episode: \"Escort to"
-                                    , "Danger\" (1.06)" ]
-                        , T.unwords [ "As a kidnapped foreign"
-                                    , "princess, she is kidnapped by"
-                                    , "terrorists. She." ]
-                        , T.unwords [ "is sitting in a warehouse talking to one"
-                                    , "of her captors, and is" ]
-                        , T.unwords [ "gagged with white cloth between the"
-                                    , "teeth (on screen). Short scene," ]
-                        , T.unwords [ "but some pretty good closeups. She is"
-                                    , "wearing a purple sleeveless" ]
-                        , T.unwords [ "gown." ]
-                        , T.unwords [ "Tags: bonddesc_anklestogether,"
-                                    , "bonddesc_handsbehind, gagtype_cleave,"
-                                    , "onscreen_gagging, onscreen_tying,"
-                                    , "outfit_skirt, restraint_rope, country_us"
-                                    ]
-                        ]
-         in checkT t
-                   (Entry { _recordNumber = ID 3
-                          , _title =
-                            Title $ T.unwords [ "The Amazing Spider-Man (1978)"
-                                              , "aka Spiderman" ]
-                          , _medium = 𝕵 TVSeries
-                          , _actresses = ["Madeleine Stowe"]
-                          , _description = Description $
-                              unlines [ T.unwords
-                                          [ "As a kidnapped foreign"
-                                          , "princess, she is kidnapped by"
-                                          , "terrorists. She."
-                                          ]
-                                      , T.unwords
-                                          [ "is sitting in a warehouse talking"
-                                          , "to one of her captors, and is" ]
-                                      , T.unwords
-                                          [ "gagged with white cloth between"
-                                          , "the teeth (on screen). Short"
-                                          , "scene,"
-                                          ]
-                                      , T.unwords
-                                          [ "but some pretty good closeups. She"
-                                          , "is wearing a purple sleeveless" ]
-                                      , T.unwords [ "gown." ]
-                                      ]
-                          , _tags = [ "bonddesc_anklestogether"
-                                    , "bonddesc_handsbehind", "gagtype_cleave"
-                                    , "onscreen_gagging", "onscreen_tying"
-                                    , "outfit_skirt", "restraint_rope"
-                                    , "country_us"]
-                          , _episode = 𝕵 (mkEpisode [1,6] (𝕵"Escort to Danger"))
-                          , _entryDate = Day.epoch
-                          })
-      , let t = unlines [ "Record number: 158"
-                        , "Title: Ninja III: The Domination (1984)"
-                        , "Medium: Movie"
-                        , "Actress: Lucinda Dickey"
-                        , T.unwords [ "Description: About halfway through, she"
-                                    , "appears, ungagged, standing bound"
-                                    , "between two posts by ropes tied to"
-                                    , "leather cuffs around her outstretched"
-                                    , "wrists, and by two chains attached to a"
-                                    , "belt around her midsection, as she"
-                                    , "undergoes a ritual to call up the spirit"
-                                    , "of a ninja that has possessed her."
-                                    ]
-                        ]
-          in checkT t
-          (Entry { _recordNumber = ID 158
-                 , _title = "Ninja III: The Domination (1984)"
-                 , _medium = 𝕵 Movie
-                 , _actresses = ["Lucinda Dickey"]
-                 , _description = Description $
-                     T.unwords [ "About halfway through, she appears, ungagged,"
-                               , "standing bound between two posts by ropes"
-                               , "tied to leather cuffs around her outstretched"
-                               , "wrists, and by two chains attached to a belt"
-                               , "around her midsection, as she undergoes a"
-                               , "ritual to call up the spirit of a ninja that"
-                               , "has possessed her."
-                               ]
-                 , _tags = []
-                 , _episode = 𝕹
-                 , _entryDate = Day.epoch
-                 })
-        ]
+--------------------
 
-{-  EPISODE
+instance Table EntryTable where
+  type instance RowType EntryTable = EntryRow
+  tName   _ = "Entry"
+  columns _ =  ( ColumnDesc "id"          CTypeInteger [PrimaryKey] )
+            :| [ ColumnDesc "title"       CTypeText []
+               , ColumnDesc "medium"      CTypeText []
+               , ColumnDesc "actresses"   CTypeText []
+               , ColumnDesc "description" CTypeText []
+               , ColumnDesc "episodeid"   CTypeText []
+               , ColumnDesc "episodename" CTypeText []
+               , ColumnDesc "entrydate"   CTypeInteger []
+               ]
 
-Record      : 012242
-EntryDate   : 2024-10-10
-Title       : CSI: Crime Scene Investigation aka C.S.I.
-Medium      : TV Series
-Actresses   : Kay Panabaker
-Tags        : bonddesc_blindfold, bonddesc_handsspread, gagtype_tape, restraint_tape
-Description :
-  Episode: "Built to Kill" Part 2 (7.2)
+------------------------------------------------------------
 
-  Lindsey (Panabaker), the daughter of series regular Catherine (Marg
-  Helgenberger) is abducted during a car accident. She is later shown on a still
-  image via a PC monitor, looking very helpless; she sits on a chair, hands duct
-  taped to the armrests, feet unbound, gagged with a wide strip of duct tape,
-  and blindfolded with more tape wrapped once around her head. The original
-  polaroid of her like this is shown earlier, at about 33mins (based on a 1hr
-  broadcast with commercials). Shortly afterwards the hideout is raided and she
-  is released; very realistic onscreen ungagging and un-blindfolding, with the
-  tape being slowly peeled off and pulling her skin back. It is clearly shown to
-  the camera that the tape had no "protection" for her lips or eyes.
--}
+insertEntry_ ∷ ∀ ε ω μ .
+               (MonadIO μ, Default ω, MonadLog (Log ω) μ,
+                AsSQLiteError ε, Printable ε, MonadError ε μ,
+                MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
+               Connection → Day → Entry → DoMock → μ (𝕄 ID)
+insertEntry_ conn d e mck = do
+  let name  = e ⊣ title
+  row_ids ← insertTableRows_ Informational (Proxy ∷ Proxy EntryTable) conn
+                             [entryRow d e]
+                             "ON CONFLICT (id) DO NOTHING RETURNING (id)" mck
 
-_test ∷ IO ExitCode
-_test = runTestTree tests
+  case row_ids of
+    [(_, [Only (n ∷ ID)])] → do
+      logio Informational ([fmtT|inserted %d (%T)|] (unID n) name) NoMock
+      insertEntryTags_ conn n (e ⊣ tags) mck
+      insertEntryActresses_ conn n (e ⊣ actresses) mck
+      return $ 𝕵 n
+    _ → return 𝕹
 
-_tests ∷ 𝕊 → IO ExitCode
-_tests = runTestsP tests
+--------------------
 
-_testr ∷ 𝕊 → ℕ → IO ExitCode
-_testr = runTestsReplay tests
+insertEntry ∷ ∀ ε ω μ .
+              (MonadIO μ, Default ω, MonadLog (Log ω) μ,
+               AsSQLiteError ε, Printable ε, MonadError ε μ,
+               MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
+              Connection → Day → Entry → DoMock → μ (𝕄 ID)
+insertEntry conn d e mck= withinTransaction conn mck $ insertEntry_ conn d e mck
+
+----------------------------------------
+
+readEntry ∷ ∀ ε ω μ .
+            (MonadIO μ, Default ω, MonadLog (Log ω) μ,
+             AsSQLiteError ε, Printable ε, MonadError ε μ,
+             MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
+            Connection → ID → DoMock → μ (𝕄 Entry)
+readEntry conn eid mck = do
+  let fields ∷ [𝕋]
+      fields = [ "title", "medium", "description", "episodeid", "episodename"
+               , "entrydate" ]
+      sql = Query $ [fmt|SELECT %L FROM Entry WHERE ID = ?|] fields
+  query Informational conn sql (Only eid) [] mck ≫ \ case
+    []                    → return 𝕹
+
+    [(ttle,mdm,desc,epid,epname,edate)] → do
+      tgs  ← readTags      conn eid mck
+      acts ← readActresses conn eid mck
+      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc (epi epid epname) edate
+
+    xs                    →
+      throwSQLMiscError $ [fmtT|too many (%d) entries found for %d|]
+                          (unID eid) (length xs)
 
 -- that's all, folks! ----------------------------------------------------------

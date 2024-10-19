@@ -1,3 +1,6 @@
+- better Episode Name parsing, +tests
+- split out EntryTests.hs, EntryData.hs
+
 0.0.2.1 2024-10-13
 ==================
 - build effort #3

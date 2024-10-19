@@ -82,11 +82,12 @@ import Data.Time.Format.ISO8601 ( iso8601Show )
 --                     local imports                      --
 ------------------------------------------------------------
 
+import Brian.EntryTests qualified as EntryTests
+
 import Brian.Actress     ( ActressRefTable, ActressTable )
 import Brian.BTag        ( TagRefTable, TagTable )
 import Brian.Day         ( Day(Day) )
-import Brian.Entry       ( parseEntries )
-import Brian.EntryData   ( EntryTable, insertEntry, readEntry )
+import Brian.Entry       ( EntryTable, insertEntry, parseEntries, readEntry )
 import Brian.EntryFilter ( entryMatches, gFilt, titleSTs )
 import Brian.ID          ( ID(ID) )
 import Brian.Options     ( EntryFilter,
@@ -217,5 +218,22 @@ main ∷ IO ()
 main =
   let desc ∷ 𝕋 = "manipulate a brianDB"
   in  getArgs ≫ stdMain desc optionsParser (doMain @UsageSQLiteFPIOTPError)
+
+
+-- tests -----------------------------------------------------------------------
+
+{-| unit tests -}
+tests ∷ TestTree
+tests =
+  testGroup "Brian" [ EntryTests.tests ]
+
+_test ∷ IO ExitCode
+_test = runTestTree tests
+
+_tests ∷ 𝕊 → IO ExitCode
+_tests = runTestsP tests
+
+_testr ∷ 𝕊 → ℕ → IO ExitCode
+_testr = runTestsReplay tests
 
 -- that's all, folks! ----------------------------------------------------------

@@ -7,6 +7,7 @@ module Brian.Episode
   , epName
   , epi
   , mkEpisode
+  , tests
   ) where
 
 import Base1T
@@ -14,17 +15,23 @@ import Prelude ( error )
 
 -- base ---------------------------------
 
-import Control.Applicative ( optional )
-import Text.Read           ( readEither )
+import Data.List ( reverse )
+import Text.Read ( read, readEither )
+
+-- lens --------------------------------
+
+import Control.Lens.Getter ( view )
+import Control.Lens.Tuple  ( _1, _2 )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( char, digit, string )
+import Text.Parser.Char        ( CharParsing, char, digit, noneOf, spaces,
+                                 string )
 import Text.Parser.Combinators ( sepBy1 )
 
 -- parser-plus -------------------------
 
-import ParserPlus ( dQuotedString, parens, whitespaces )
+import ParserPlus ( parens, tries )
 
 -- split -------------------------------
 
@@ -46,7 +53,7 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus ( TextualPlus(textual') )
+import TextualPlus ( TextualPlus(textual'), checkT )
 
 --------------------------------------------------------------------------------
 
@@ -110,16 +117,30 @@ instance Printable Episode where
 
 --------------------
 
+type Bit   = (ℕ,𝕊)
+type Piece = 𝔼 [Bit] 𝕊
+
 instance TextualPlus Episode where
   textual' =
-    let ep_name = optional $ (EpisodeName ∘ T.pack)⊳ dQuotedString ⋪ whitespaces
-        ep_id   =
-          let readN s =
-                case readEither s of
-                  𝕷 e → error$ [fmt|failed to read '%s' as ℕ (Episode): %T|] s e
-                  𝕽 r → r
-          in  parens $ EpisodeID ⊳ (readN ⊳ some digit) `sepBy1` (char '.')
-    in  string "Episode: " ⋫ (Episode ⊳ ep_name) ⊵ ep_id
+    let piece ∷ CharParsing η ⇒ η Piece
+        piece = let readX ∷ 𝕊 → Bit
+                    readX s = (read s,s)
+                in  tries ((𝕷 ⊳ (spaces ⋫
+                                 parens ((readX⊳some digit) `sepBy1` char '.')))
+                        :| [ 𝕽 ⊳ some (char ' ')
+                          , 𝕽 ⊳ some (noneOf " (\n")
+                          , 𝕽 ∘ pure ⊳ char '(' ])
+
+        piece_to_s ∷ Piece → 𝕊
+        piece_to_s = either (ю ∘ fmap (view _2)) id
+        unPieces ∷ [Piece] → Episode
+        unPieces xs =
+          case reverse xs of
+            𝕷 ep_id : ep_name →
+              Episode (𝕵∘EpisodeName∘T.pack $ ю (piece_to_s ⊳ reverse ep_name))
+                      (EpisodeID $ view _1 ⊳ ep_id)
+            _ → Episode (𝕵∘EpisodeName∘T.pack $ ю (piece_to_s ⊳ xs)) (EpisodeID [])
+    in  string "Episode: " ⋫ (unPieces ⊳ some piece)
 
 ----------------------------------------
 
@@ -139,5 +160,28 @@ epi epid           (𝕵 (EpisodeName "")) =
   𝕵 $ Episode { _episodeID = epid, _ename = 𝕹 }
 epi epid           (𝕵 epname)           =
   𝕵 $ Episode { _episodeID = epid, _ename = 𝕵 epname }
+
+-- tests -----------------------------------------------------------------------
+
+{-| unit tests -}
+tests ∷ TestTree
+tests =
+  testGroup "Episode"
+  [ checkT "Episode: \"Escort to Danger\" (1.06)" $
+           mkEpisode [1,6]  $ 𝕵 "\"Escort to Danger\""
+  , checkT "Episode: \"The Specialist\" aka \"The Professionals\" (2.08)" $
+           mkEpisode [2,8]  $ 𝕵 "\"The Specialist\" aka \"The Professionals\""
+  , checkT "Episode: \"Built to Kill\" Part 2 (7.2)" $
+           mkEpisode [7,2]  $ 𝕵 "\"Built to Kill\" Part 2"
+  ]
+
+_test ∷ IO ExitCode
+_test = runTestTree tests
+
+_tests ∷ 𝕊 → IO ExitCode
+_tests = runTestsP tests
+
+_testr ∷ 𝕊 → ℕ → IO ExitCode
+_testr = runTestsReplay tests
 
 -- that's all, folks! ----------------------------------------------------------

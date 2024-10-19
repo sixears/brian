@@ -168,10 +168,7 @@ instance OptParser EntryFilter where
 
 gFilt ∷ Entry → 𝔹
 gFilt e =
--- XXX
---  let flt = [pcre|(?<!\\bno)\\s+gag|]
-  let -- descn_filter = [pcre|(?<!\b[Nn]o)\s+gag|] -- negative lookbehind
-      words ∷ 𝕋 → [𝕋] = T.split (ﬧ . isAlpha)
+  let words ∷ 𝕋 → [𝕋] = T.split (ﬧ . isAlpha)
       paired_words ∷ 𝕋 → [(𝕋,𝕋)] = (\ xs → zip xs (tailSafe xs)) ∘ words
       descn_filter ∷ Description → 𝔹 =
         let f ∷ (𝕋,𝕋) → 𝔹
@@ -179,10 +176,11 @@ gFilt e =
                         ∧ (T.toLower a) ∉ ["no", "not"]
         in  any f ∘ paired_words ∘ toText
       tag_filter   = [pcre|^gagtype_(?!hand)|]    -- negative lookahead
-  in  or [ descn_filter (e ⊣ description) -- matched $ toText(e ⊣ description) ?=~ descn_filter
+  in  or [ descn_filter (e ⊣ description)
          , any (\ t → matched $ t ?=~ tag_filter) $ toText ⩺ unBTags $ e ⊣ tags
---         , any [ _ (toText t) | t ← unBTags $ e ⊣ tags ]
          ]
+
+----------------------------------------
 
 entryMatches ∷ EntryFilter → Entry → 𝔹
 entryMatches flt e =
@@ -198,5 +196,14 @@ entryMatches flt e =
                 -- this should be an OR, i.e., ep ≡ 7.3 or ep ≡ 10.2 ...
               , [ (flt ⊣ epidFs) ≡ [] ∨ or (epid_match ⊳ flt ⊣ epidFs) ]
               ]
+
+------------------------------------------------------------
+
+data EFilt = EFilt (Entry -> 𝔹)
+           | EFilt2 EntryFilter2
+
+data EntryFilter2 = EF_Conj (NonEmpty EFilt)
+                  | EF_Disj (NonEmpty EFilt)
+
 
 -- that's all, folks! ----------------------------------------------------------
