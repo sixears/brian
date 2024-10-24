@@ -291,7 +291,7 @@ parseTests =
     , checkT "⋀[t{homeLand},p(04.05)]"
       (EF_Conj $ ef2_title_pcre [pcre|homeLand|]
               :| [ef2_epid_match $ EpIDFilter [4,5]])
-    , checkT "⋀[p(006),t{homeLand}]"
+    , checkT "&&[p(006),t{homeLand}]"
       (EF_Conj $ ef2_epid_match (EpIDFilter [6])
               :| [ef2_title_pcre [pcre|homeLand|]])
     ]
