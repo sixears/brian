@@ -242,6 +242,8 @@ parseRE =
 parseEPID ∷ (MonadFail μ, CharParsing μ) ⇒ μ EpIDFilter
 parseEPID = parens textual'
 
+parseFilts = brackets (textual' `sepByNonEmpty` char ',')
+
 instance TextualPlus EntryFilter2 where
   textual' = char 'p' ⋫ (ef2_epid_match ⊳ parseEPID)
              -- The TextualPlus instance of PCRE allows for double-quoting.
@@ -250,7 +252,7 @@ instance TextualPlus EntryFilter2 where
              -- users)
            ∤ char 't' ⋫ (ef2_title_pcre ⊳ parseRE)
            ∤ (string "⋀" ∤ string "&&") ⋫
-               (EF_Conj ⊳ brackets (textual' `sepByNonEmpty` char ','))
+               (EF_Conj ⊳ parseFilts {- brackets (textual' `sepByNonEmpty` char ',') -})
 
 
 {- | Take a parsec for an α, and function of the form `α → Either Printable β`,
