@@ -2,7 +2,9 @@
 {-# LANGUAGE UnicodeSyntax   #-}
 
 module Brian.EntryData
-  ( ets
+  ( e1
+  , e3
+  , ets
   ) where
 
 import Base1T

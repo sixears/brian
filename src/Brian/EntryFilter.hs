@@ -6,20 +6,26 @@ module Brian.EntryFilter
   , titleSTs
   ) where
 
-import Base1T hiding ( toList )
+import Base1T  hiding ( toList )
+import Prelude ( error )
 
 -- base --------------------------------
 
-import Data.Char     ( isAlpha )
-import Data.Foldable ( and, any, or )
-import Data.List     ( repeat, zip )
-import Data.Maybe    ( fromMaybe )
-import GHC.Exts      ( toList )
-import Text.Read     ( read )
+import Control.Monad.Fail ( MonadFail(fail) )
+import Data.Char          ( isAlpha )
+import Data.Foldable      ( all, and, any, or )
+import Data.List          ( intercalate, repeat, zip )
+import Data.Maybe         ( fromMaybe )
+import GHC.Exts           ( toList )
+import Text.Read          ( read )
 
 -- lens --------------------------------
 
 import Control.Lens.Getter ( view )
+
+-- natural -----------------------------
+
+import Natural ( length )
 
 -- options-applicative -----------------
 
@@ -32,13 +38,22 @@ import OptParsePlus ( OptReader(readM) )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( char, digit )
-import Text.Parser.Combinators ( sepBy )
+import Text.Parser.Char        ( CharParsing, char, digit, noneOf )
+import Text.Parser.Combinators ( sepBy, sepBy1, sepByNonEmpty )
+
+-- parsec-plus -------------------------
+
+import ParsecPlus ( Parsecable(parser), Parser )
+
+-- parser-plus -------------------------
+
+import ParserPlus ( boundedDoubledChars, braces, brackets, parens, tries )
 
 -- pcre --------------------------------
 
-import PCRE      ( PCRE, (?=~) )
-import PCRE.Base ( pcre, reSource )
+import PCRE       ( PCRE, compRE, (?=~) )
+import PCRE.Base  ( pcre, reSource )
+import PCRE.Error ( REParseError )
 
 -- regex -------------------------------
 
@@ -62,11 +77,13 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus ( TextualPlus(textual'), parseTextual )
+import TextualPlus ( TextualPlus(textual'), checkT, parseTextual )
 
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
+
+import Brian.EntryData qualified as EntryData
 
 import Brian.BTag        ( unBTags )
 import Brian.Description ( Description )
@@ -199,11 +216,152 @@ entryMatches flt e =
 
 ------------------------------------------------------------
 
-data EFilt = EFilt (Entry -> 𝔹)
-           | EFilt2 EntryFilter2
+data EntryFilter2 = EF_Conj (NonEmpty EntryFilter2)
+                  | EF_Disj (NonEmpty EntryFilter2)
+                  | EF_Pred 𝕋 (Entry -> 𝔹)
 
-data EntryFilter2 = EF_Conj (NonEmpty EFilt)
-                  | EF_Disj (NonEmpty EFilt)
+--------------------
 
+instance Show EntryFilter2 where
+  show (EF_Pred t _) = T.unpack t
+  show (EF_Conj xs)  = "AND[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
+
+--------------------
+
+instance Eq EntryFilter2 where
+  EF_Pred t _ == EF_Pred t' _ = t == t'
+  EF_Conj xs  == EF_Conj xs'  = and $
+    (length xs ≡ length xs'): [ x ≡ x' | (x,x') ← zip (toList xs) (toList xs') ]
+
+--------------------
+
+-- parseRE ∷ Parser PCRE
+parseRE ∷ (MonadFail μ, CharParsing μ) ⇒ μ PCRE
+parseRE =
+  eitherParsec (boundedDoubledChars '{' '}') (compRE @REParseError ∘ T.pack)
+
+instance TextualPlus EntryFilter2 where
+  textual' = char 'p' ⋫ (ef2_epid_match ⊳ parens textual')
+             -- The TextualPlus instance of PCRE allows for double-quoting.
+             -- I guess that was a mistake; but anyway, we cannot easily use it
+             -- here directly without adding complication to the parsing (for
+             -- users)
+           ∤ char 't' ⋫ (ef2_title_pcre ⊳ parseRE)
+           ∤ char '⋀' ⋫ (EF_Conj ⊳ brackets (textual' `sepByNonEmpty` char ','))
+
+
+{- | Take a parsec for an α, and function of the form `α → Either Printable β`,
+     and use these to build a `ParsecT`.
+ -}
+eitherParsec ∷ (MonadFail μ, CharParsing μ, Printable ε) ⇒
+               μ α → (α → 𝔼 ε β) → μ β
+eitherParsec f g = f ≫ (\ t → case g t of
+                                 𝕷 e → fail $ toString e
+                                 𝕽 r → return r)
+
+----------------------------------------
+
+ef2_title_pcre ∷ PCRE → EntryFilter2
+ef2_title_pcre re   =
+  EF_Pred ([fmt|title PCRE: %s|] (reSource re))
+          (\ e → matched $ toText(e ⊣ title) ?=~ re)
+
+----------------------------------------
+
+ef2_epid_match ∷ EpIDFilter → EntryFilter2
+ef2_epid_match epidf =
+  EF_Pred ([fmt|epID: %T|] epidf)
+          (\ e → maybe 𝕱 (matchEpID epidf) (view epID ⊳ e ⊣ episode))
+
+----------------------------------------
+
+matchFilt ∷ EntryFilter2 → Entry → 𝔹
+matchFilt (EF_Pred _ p)  e = p e
+matchFilt (EF_Conj ps) e   = all (\ p -> matchFilt p e) ps
+matchFilt (EF_Disj ps) e   = any (\ p -> matchFilt p e) ps
+
+--------------------------------------------------------------------------------
+
+{-| unit tests -}
+parseTests ∷ TestTree
+parseTests =
+  testGroup "parseTest" $
+    [ checkT "t{homeLand}" (ef2_title_pcre [pcre|homeLand|])
+    , checkT "p(1.02.3)" (ef2_epid_match $ EpIDFilter [1,2,3])
+    , checkT "⋀[t{homeLand},p(04.05)]"
+      (EF_Conj $ ef2_title_pcre [pcre|homeLand|]
+              :| [ef2_epid_match $ EpIDFilter [4,5]])
+    , checkT "⋀[p(006),t{homeLand}]"
+      (EF_Conj $ ef2_epid_match (EpIDFilter [6])
+              :| [ef2_title_pcre [pcre|homeLand|]])
+    ]
+
+filtTests ∷ TestTree
+filtTests =
+  let flt_guiding = ef2_title_pcre [pcre|Guiding|]
+      flt_spider  = ef2_title_pcre [pcre|Spider|]
+      flt_ep1     = ef2_epid_match (EpIDFilter [1])
+      flt_ep2     = ef2_epid_match (EpIDFilter [2])
+      flt_spOR1   = EF_Disj (flt_spider :| [flt_ep1])
+      flt_spAND1  = EF_Conj (flt_spider :| [flt_ep1])
+
+  in  testGroup "EntryFilter"
+        [ testCase "Guiding:guiding +"$ matchFilt flt_guiding EntryData.e1 @=? 𝕿
+        , testCase "Spider:guiding  -"$ matchFilt flt_guiding EntryData.e3 @=? 𝕱
+        , testCase "Guiding:spider  -"$ matchFilt flt_spider  EntryData.e1 @=? 𝕱
+        , testCase "Spider:spider   +"$ matchFilt flt_spider  EntryData.e3 @=? 𝕿
+        , testCase "Guiding:1       -"$ matchFilt flt_ep1     EntryData.e1 @=? 𝕱
+        , testCase "Spider:1        +"$ matchFilt flt_ep1     EntryData.e3 @=? 𝕿
+
+        , testCase "Spider:⋀[spider,1] +"$
+            matchFilt (EF_Conj (flt_spider :| [flt_ep1]))     EntryData.e3 @=? 𝕿
+        , testCase "Spider:⋀[spider,2] +"$
+            matchFilt (EF_Conj (flt_spider :| [flt_ep2]))     EntryData.e3 @=? 𝕱
+        , testCase "Spider:⋀[guiding,1] +"$
+            matchFilt (EF_Conj (flt_guiding :| [flt_ep1]))    EntryData.e3 @=? 𝕱
+        , testCase "Spider:⋀[guiding,2] +"$
+            matchFilt (EF_Conj (flt_guiding :| [flt_ep2]))    EntryData.e3 @=? 𝕱
+        , testCase "Guiding:⋀[spider,1] +"$
+            matchFilt (EF_Conj (flt_spider :| [flt_ep1]))     EntryData.e1 @=? 𝕱
+        , testCase "Guiding:⋀[spider,2] +"$
+            matchFilt (EF_Conj (flt_spider :| [flt_ep2]))     EntryData.e1 @=? 𝕱
+
+        , testCase "Spider:⋁[spider,1] +"$
+            matchFilt (EF_Disj (flt_spider :| [flt_ep1]))     EntryData.e3 @=? 𝕿
+        , testCase "Spider:⋁[spider,2] +"$
+            matchFilt (EF_Disj (flt_spider :| [flt_ep2]))     EntryData.e3 @=? 𝕿
+        , testCase "Spider:⋁[guiding,1] +"$
+            matchFilt (EF_Disj (flt_guiding :| [flt_ep1]))    EntryData.e3 @=? 𝕿
+        , testCase "Spider:⋁[guiding,2] +"$
+            matchFilt (EF_Disj (flt_guiding :| [flt_ep2]))    EntryData.e3 @=? 𝕱
+        , testCase "Guiding:⋁[spider,1] +"$
+            matchFilt (EF_Disj (flt_spider :| [flt_ep1]))     EntryData.e1 @=? 𝕱
+        , testCase "Guiding:⋁[spider,2] +"$
+            matchFilt (EF_Disj (flt_spider :| [flt_ep2]))     EntryData.e1 @=? 𝕱
+
+        , testCase "Spider:⋀[guiding,⋁[spider,1]] +"$
+            let filt = EF_Conj (flt_guiding :| [flt_spOR1])
+            in  matchFilt filt EntryData.e3 @=? 𝕱
+        , testCase "Spider:⋀[⋁[spider,1],guiding] +"$
+            let filt = EF_Conj (flt_spOR1 :| [flt_guiding])
+            in  matchFilt filt EntryData.e3 @=? 𝕱
+        , testCase "Spider:⋁[⋀[spider,1],guiding] +"$
+            let filt = EF_Disj (flt_spAND1 :| [flt_guiding])
+            in  matchFilt filt EntryData.e3 @=? 𝕿
+        ]
+
+{-| unit tests -}
+tests ∷ TestTree
+tests =
+  testGroup "EntryFilter" [ filtTests, parseTests ]
+
+_test ∷ IO ExitCode
+_test = runTestTree tests
+
+_tests ∷ 𝕊 → IO ExitCode
+_tests = runTestsP tests
+
+_testr ∷ 𝕊 → ℕ → IO ExitCode
+_testr = runTestsReplay tests
 
 -- that's all, folks! ----------------------------------------------------------
