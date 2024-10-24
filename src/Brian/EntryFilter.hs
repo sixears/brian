@@ -38,7 +38,7 @@ import OptParsePlus ( OptReader(readM) )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( CharParsing, char, digit, noneOf )
+import Text.Parser.Char        ( CharParsing, char, digit, noneOf, string )
 import Text.Parser.Combinators ( sepBy, sepBy1, sepByNonEmpty )
 
 -- parsec-plus -------------------------
@@ -235,19 +235,22 @@ instance Eq EntryFilter2 where
 
 --------------------
 
--- parseRE ∷ Parser PCRE
 parseRE ∷ (MonadFail μ, CharParsing μ) ⇒ μ PCRE
 parseRE =
   eitherParsec (boundedDoubledChars '{' '}') (compRE @REParseError ∘ T.pack)
 
+parseEPID ∷ (MonadFail μ, CharParsing μ) ⇒ μ EpIDFilter
+parseEPID = parens textual'
+
 instance TextualPlus EntryFilter2 where
-  textual' = char 'p' ⋫ (ef2_epid_match ⊳ parens textual')
+  textual' = char 'p' ⋫ (ef2_epid_match ⊳ parseEPID)
              -- The TextualPlus instance of PCRE allows for double-quoting.
              -- I guess that was a mistake; but anyway, we cannot easily use it
              -- here directly without adding complication to the parsing (for
              -- users)
            ∤ char 't' ⋫ (ef2_title_pcre ⊳ parseRE)
-           ∤ char '⋀' ⋫ (EF_Conj ⊳ brackets (textual' `sepByNonEmpty` char ','))
+           ∤ (string "⋀" ∤ string "&&") ⋫
+               (EF_Conj ⊳ brackets (textual' `sepByNonEmpty` char ','))
 
 
 {- | Take a parsec for an α, and function of the form `α → Either Printable β`,
