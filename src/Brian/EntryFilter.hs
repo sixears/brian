@@ -1,9 +1,9 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.EntryFilter
   ( EntryFilter
-  , entryMatches
+    -- , entryMatches
   , gFilt
-  , titleSTs
+  , matchFilt
   ) where
 
 import Base1T  hiding ( toList )
@@ -15,7 +15,7 @@ import Control.Monad.Fail ( MonadFail(fail) )
 import Data.Char          ( isAlpha )
 import Data.Foldable      ( all, and, any, or )
 import Data.List          ( intercalate, repeat, zip )
-import Data.Maybe         ( fromMaybe )
+import Data.Typeable      ( typeOf )
 import GHC.Exts           ( toList )
 import Text.Read          ( read )
 
@@ -29,8 +29,7 @@ import Natural ( length )
 
 -- options-applicative -----------------
 
-import Options.Applicative ( eitherReader, help, long, option, short,
-                             strOption )
+import Options.Applicative ( argument, eitherReader, help, metavar )
 
 -- optparse-plus -----------------------
 
@@ -38,16 +37,12 @@ import OptParsePlus ( OptReader(readM) )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( CharParsing, char, digit, noneOf, string )
-import Text.Parser.Combinators ( sepBy, sepBy1, sepByNonEmpty )
-
--- parsec-plus -------------------------
-
-import ParsecPlus ( Parsecable(parser), Parser )
+import Text.Parser.Char        ( CharParsing, char, digit, string )
+import Text.Parser.Combinators ( sepBy, sepByNonEmpty, try )
 
 -- parser-plus -------------------------
 
-import ParserPlus ( boundedDoubledChars, braces, brackets, parens, tries )
+import ParserPlus ( boundedDoubledChars, brackets, parens, whitespaces )
 
 -- pcre --------------------------------
 
@@ -77,7 +72,15 @@ import Text.Printer qualified as P
 
 -- textual-plus ------------------------
 
-import TextualPlus ( TextualPlus(textual'), checkT, parseTextual )
+import TextualPlus ( TextualPlus(textual'), parseTextual )
+
+-- trifecta ----------------------------
+
+import Text.Trifecta.Result ( Result(Failure, Success) )
+
+-- trifecta-plus -----------------------
+
+import TrifectaPlus ( eiText, tParse, testParse )
 
 ------------------------------------------------------------
 --                     local imports                      --
@@ -111,48 +114,7 @@ matchEpID (EpIDFilter fs) (unEpisodeID → ds) =
 
 ------------------------------------------------------------
 
-data EntryFilter = EntryFilter { _titleREs :: [PCRE]
-                               , _titleSTs :: [𝕋]
-                               , _actrsREs :: [PCRE]
-                               , _descsREs :: [PCRE]
-                               , _epnamREs :: [PCRE]
-                               , _epidFs   :: [EpIDFilter]
-                               }
-
-titleREs ∷ Lens' EntryFilter [PCRE]
-titleREs = lens _titleREs (\ f t → f { _titleREs = t })
-
-titleSTs ∷ Lens' EntryFilter [𝕋]
-titleSTs = lens _titleSTs (\ f t → f { _titleSTs = t })
-
-actrsREs ∷ Lens' EntryFilter [PCRE]
-actrsREs = lens _actrsREs (\ f t → f { _actrsREs = t })
-
-descsREs ∷ Lens' EntryFilter [PCRE]
-descsREs = lens _descsREs (\ f t → f { _descsREs = t })
-
-epnamREs ∷ Lens' EntryFilter [PCRE]
-epnamREs = lens _epnamREs (\ f t → f { _epnamREs = t })
-
-epidFs ∷ Lens' EntryFilter [EpIDFilter]
-epidFs = lens _epidFs (\ f t → f { _epidFs = t })
-
---------------------
-
-instance Show EntryFilter where
-  show (EntryFilter ts tx as ds ens eis) =
-    [fmt|EntryFilter %t|]
-      (T.intercalate " " $
-       (\ (n,x) → [fmt|{%t: %L}|] n x) ⊳ [ ("titleREs", reSource ⊳ ts)
-                                         , ("titleSTs", T.unpack ⊳ tx)
-                                         , ("actrsREs", reSource ⊳ as)
-                                         , ("descnREs", reSource ⊳ ds)
-                                         , ("epnamREs", reSource ⊳ ens)
-                                         , ("epidFs"  , toString ⊳ eis)
-                                         ])
-
---------------------
-
+{-
 instance OptParser EntryFilter where
   optParse = EntryFilter ⊳ many (option readM (ю [ long "title"
                                                  , short 't'
@@ -180,6 +142,7 @@ instance OptParser EntryFilter where
                                                  , short 'p'
                                                  , help "episode ID"
                                                  ]))
+-}
 
 ----------------------------------------
 
@@ -197,63 +160,113 @@ gFilt e =
          , any (\ t → matched $ t ?=~ tag_filter) $ toText ⩺ unBTags $ e ⊣ tags
          ]
 
-----------------------------------------
-
-entryMatches ∷ EntryFilter → Entry → 𝔹
-entryMatches flt e =
-  let actrs_match re  = (matched ∘ (?=~re) ∘ toText) ⊳ toList (e ⊣ actresses)
-      epname          = toText ⊳ (e ⊣ episode ≫ view epName)
-      epnam_match re  = maybe 𝕱 (\ n → matched $ n ?=~ re) epname
-      epid_match epif = fromMaybe 𝕱 (matchEpID epif ⊳ (view epID ⊳ e⊣ episode))
-      descn           = toText $ e ⊣ description
-  in  and $ ю [ [ matched $ toText(e ⊣ title) ?=~ re | re ← flt ⊣ titleREs ]
-              , [ matched $ descn             ?=~ re | re ← flt ⊣ descsREs ]
-              , (epnam_match ⊳ flt ⊣ epnamREs)
-              , [ or (actrs_match re)                | re ← flt ⊣ actrsREs ]
-                -- this should be an OR, i.e., ep ≡ 7.3 or ep ≡ 10.2 ...
-              , [ (flt ⊣ epidFs) ≡ [] ∨ or (epid_match ⊳ flt ⊣ epidFs) ]
-              ]
-
 ------------------------------------------------------------
 
-data EntryFilter2 = EF_Conj (NonEmpty EntryFilter2)
-                  | EF_Disj (NonEmpty EntryFilter2)
-                  | EF_Pred 𝕋 (Entry -> 𝔹)
+data EntryFilter = EF_Conj (NonEmpty EntryFilter)
+                 | EF_Disj (NonEmpty EntryFilter)
+                 | EF_Pred 𝕋 (Entry -> 𝔹)
 
 --------------------
 
-instance Show EntryFilter2 where
+instance Show EntryFilter where
   show (EF_Pred t _) = T.unpack t
   show (EF_Conj xs)  = "AND[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
+  show (EF_Disj xs)  = "OR[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
 
 --------------------
 
-instance Eq EntryFilter2 where
+instance Eq EntryFilter where
   EF_Pred t _ == EF_Pred t' _ = t == t'
   EF_Conj xs  == EF_Conj xs'  = and $
     (length xs ≡ length xs'): [ x ≡ x' | (x,x') ← zip (toList xs) (toList xs') ]
+  EF_Disj xs  == EF_Disj xs'  = and $
+    (length xs ≡ length xs'): [ x ≡ x' | (x,x') ← zip (toList xs) (toList xs') ]
+  _           == _            = 𝕱
 
---------------------
+----------------------------------------
 
 parseRE ∷ (MonadFail μ, CharParsing μ) ⇒ μ PCRE
 parseRE =
   eitherParsec (boundedDoubledChars '{' '}') (compRE @REParseError ∘ T.pack)
 
+----------------------------------------
+
 parseEPID ∷ (MonadFail μ, CharParsing μ) ⇒ μ EpIDFilter
 parseEPID = parens textual'
 
-parseFilts = brackets (textual' `sepByNonEmpty` char ',')
+----------------------------------------
 
-instance TextualPlus EntryFilter2 where
+parseFilts ∷ (MonadFail μ, CharParsing μ) ⇒ μ (NonEmpty EntryFilter)
+parseFilts =
+  let whitespaced p = whitespaces ⋫ p ⋪ whitespaces
+      separator     = whitespaced $ char ','
+  in  brackets (whitespaced (textual' `sepByNonEmpty` try (separator)))
+
+----------------------------------------
+
+ef2_title_pcre ∷ PCRE → EntryFilter
+ef2_title_pcre re   =
+  EF_Pred ([fmt|title PCRE: %s|] (reSource re))
+          (\ e → matched $ toText(e ⊣ title) ?=~ re)
+
+----------------------------------------
+
+ef2_actress_pcre ∷ PCRE → EntryFilter
+ef2_actress_pcre re   =
+  EF_Pred ([fmt|actress PCRE: %s|] (reSource re))
+          (\ e → or ((matched ∘ (?=~re) ∘ toText) ⊳ toList (e ⊣ actresses)))
+
+----------------------------------------
+
+ef2_epid_match ∷ EpIDFilter → EntryFilter
+ef2_epid_match epidf =
+  EF_Pred ([fmt|epID: %T|] epidf)
+          (\ e → maybe 𝕱 (matchEpID epidf) (view epID ⊳ e ⊣ episode))
+
+----------------------------------------
+
+ef2_epname_pcre ∷ PCRE → EntryFilter
+ef2_epname_pcre re   =
+  EF_Pred ([fmt|epname PCRE: %s|] (reSource re))
+          (\ e → maybe 𝕱 (\ n → matched $ toText n ?=~ re)
+                         (e ⊣ episode ≫ view epName))
+
+----------------------------------------
+
+instance TextualPlus EntryFilter where
   textual' = char 'p' ⋫ (ef2_epid_match ⊳ parseEPID)
              -- The TextualPlus instance of PCRE allows for double-quoting.
              -- I guess that was a mistake; but anyway, we cannot easily use it
              -- here directly without adding complication to the parsing (for
              -- users)
            ∤ char 't' ⋫ (ef2_title_pcre ⊳ parseRE)
-           ∤ (string "⋀" ∤ string "&&") ⋫
-               (EF_Conj ⊳ parseFilts {- brackets (textual' `sepByNonEmpty` char ',') -})
+           ∤ char 'a' ⋫ (ef2_actress_pcre ⊳ parseRE)
+           ∤ char 'e' ⋫ (ef2_epname_pcre ⊳ parseRE)
+           ∤ ((string "⋀" ∤ string "&&") ⋪ whitespaces) ⋫ (EF_Conj ⊳ (whitespaces ⋫ parseFilts))
+           ∤ (string "⋁" ∤ string "||") ⋫ (EF_Disj ⊳ parseFilts)
 
+----------------------------------------
+
+trifectTextual ∷ ∀ β α η .
+                 (TextualPlus β, Printable α, Typeable β, MonadError 𝕋 η) ⇒
+                 α → η β
+trifectTextual (toText → z) =
+  let fromParsed (Success a) = a
+      -- this function exists solely to provide a hypothetical value to reflect
+      -- on
+      fromParsed (Failure _) = error "this should never be evaluated"
+      parsedZ                = tParse z
+      typ                    = typeOf $ fromParsed parsedZ
+   in case parsedZ of
+        Success a → return a
+        Failure e →
+          throwError $ [fmt|failed to parse '%t' as '%w': %t|] z typ (eiText e)
+
+instance OptParser EntryFilter where
+  optParse = argument (eitherReader (first T.unpack ⊳ trifectTextual))
+                      (metavar "PREDICATE" ⊕ help "episode filter")
+
+----------------------------------------
 
 {- | Take a parsec for an α, and function of the form `α → Either Printable β`,
      and use these to build a `ParsecT`.
@@ -266,21 +279,7 @@ eitherParsec f g = f ≫ (\ t → case g t of
 
 ----------------------------------------
 
-ef2_title_pcre ∷ PCRE → EntryFilter2
-ef2_title_pcre re   =
-  EF_Pred ([fmt|title PCRE: %s|] (reSource re))
-          (\ e → matched $ toText(e ⊣ title) ?=~ re)
-
-----------------------------------------
-
-ef2_epid_match ∷ EpIDFilter → EntryFilter2
-ef2_epid_match epidf =
-  EF_Pred ([fmt|epID: %T|] epidf)
-          (\ e → maybe 𝕱 (matchEpID epidf) (view epID ⊳ e ⊣ episode))
-
-----------------------------------------
-
-matchFilt ∷ EntryFilter2 → Entry → 𝔹
+matchFilt ∷ EntryFilter → Entry → 𝔹
 matchFilt (EF_Pred _ p)  e = p e
 matchFilt (EF_Conj ps) e   = all (\ p -> matchFilt p e) ps
 matchFilt (EF_Disj ps) e   = any (\ p -> matchFilt p e) ps
@@ -291,14 +290,22 @@ matchFilt (EF_Disj ps) e   = any (\ p -> matchFilt p e) ps
 parseTests ∷ TestTree
 parseTests =
   testGroup "parseTest" $
-    [ checkT "t{homeLand}" (ef2_title_pcre [pcre|homeLand|])
-    , checkT "p(1.02.3)" (ef2_epid_match $ EpIDFilter [1,2,3])
-    , checkT "⋀[t{homeLand},p(04.05)]"
+    [ testParse "t{homeLand}" (ef2_title_pcre [pcre|homeLand|])
+    , testParse "a{ Ha\\tcher}" (ef2_actress_pcre [pcre| Ha\tcher|])
+    , testParse "p(1.02.3)" (ef2_epid_match $ EpIDFilter [1,2,3])
+    , testParse "e{bongi}" (ef2_epname_pcre $ [pcre|bongi|])
+    , testParse "⋀[t{homeLand},p(04.05)]"
       (EF_Conj $ ef2_title_pcre [pcre|homeLand|]
               :| [ef2_epid_match $ EpIDFilter [4,5]])
-    , checkT "&&[p(006),t{homeLand}]"
+    , testParse "&& [ p(006)  ,t{homeLand} ]"
       (EF_Conj $ ef2_epid_match (EpIDFilter [6])
               :| [ef2_title_pcre [pcre|homeLand|]])
+    , testParse "⋁[t{homeLand},p(04.05)]"
+      (EF_Disj $ ef2_title_pcre [pcre|homeLand|]
+              :| [ef2_epid_match $ EpIDFilter [4,5]])
+    , testParse "⋀[t{homeLand},⋁[p(04.05),  p(1.2)]]"
+      (EF_Conj $ ef2_title_pcre [pcre|homeLand|]
+              :| [EF_Disj $ (ef2_epid_match $ EpIDFilter [4,5]) :| [ef2_epid_match $ EpIDFilter [1,2]]])
     ]
 
 filtTests ∷ TestTree

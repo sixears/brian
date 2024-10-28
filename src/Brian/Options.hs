@@ -1,8 +1,7 @@
 {-# LANGUAGE UnicodeSyntax #-}
 
 module Brian.Options
-  ( EntryFilter
-  , Mode(..)
+  ( Mode(..)
   , Options
   , dbFile
     --  , inputFile
@@ -75,6 +74,10 @@ optionsParser =
   let input_file = argument readM $ metavar "INPUT-FILE"
       entry_date = option OptParsePlus.readM (ю [ long "entry-date"
                                                 , short 'd',help "entry-date" ])
+      query_pars = option auto (ю [ short 'y', long "days"
+                                  , help "look back n days' entries" ])
+      query_desc = progDesc "query the database"
+      query_info = info (ModeQuery ⊳ optParse ⊵ optional query_pars) query_desc
       mode_commands ∷ [Mod CommandFields Mode] =
         [ command "create"
                   (info (ModeCreate ⊳ optional input_file
@@ -88,8 +91,8 @@ optionsParser =
                   (info (ModeAdd ⊳ optional input_file
                                  ⊵ optional entry_date)
                         (progDesc "add to an existing database"))
-        , command "query"
-                  (info (ModeQuery ⊳ optParse ⊵ optional (option auto (short 'y' ⊕ long "days" ⊕ help "look back n days' entries"))) (progDesc "query the database"))
+        , command "query" query_info
+
         ]
   in  Options ⊳ subparser (ю mode_commands)
               ⊵ argument readM (metavar "SQLITE-DB")

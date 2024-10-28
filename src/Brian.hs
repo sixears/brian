@@ -88,10 +88,9 @@ import Brian.Actress     ( ActressRefTable, ActressTable )
 import Brian.BTag        ( TagRefTable, TagTable )
 import Brian.Day         ( Day(Day) )
 import Brian.Entry       ( EntryTable, insertEntry, parseEntries, readEntry )
-import Brian.EntryFilter ( entryMatches, gFilt, titleSTs )
+import Brian.EntryFilter ( EntryFilter, gFilt, matchFilt )
 import Brian.ID          ( ID(ID) )
-import Brian.Options     ( EntryFilter,
-                           Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
+import Brian.Options     ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
                            Options, dbFile, mode, optionsParser )
 import Brian.SQLite      ( Table, createTable, query, reCreateTable )
 import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError,
@@ -147,7 +146,7 @@ maybeDumpEntry ∷ ∀ ε ω μ .
 maybeDumpEntry c q mck (Only eid) = do
   e ← readEntry c (ID $ fromIntegral eid) mck
   case e of
-    𝕵 e' | gFilt e' ∧ entryMatches q e' → say $ [fmtT|%T\n\n----|] e'
+    𝕵 e' | gFilt e' ∧ matchFilt q e' → say $ [fmtT|%T\n\n----|] e'
          | otherwise         → return ()
     𝕹    → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
 
@@ -159,7 +158,7 @@ queryEntries ∷ (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
 queryEntries c q d mck = do
   let sel = "SELECT id FROM Entry"
   today ← liftIO $ utctDay ⊳ getCurrentTime
-  eids ← let ts           = q ⊣ titleSTs
+  eids ← let ts = []
              like_clauses = const "title LIKE ?" ⊳ ts
              (date_clause,date_datum) =
                case d of
