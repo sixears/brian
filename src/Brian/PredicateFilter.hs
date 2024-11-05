@@ -2,29 +2,25 @@
 module Brian.PredicateFilter
   ( PredicateFilter(..)
   , ShowablePredicate(predMatch)
-    -- , entryMatches
   , matchFilt
-  , readM
   ) where
 
-import Base1T  hiding ( toList )
-import Prelude ( error )
+import Base1T hiding ( toList )
 
 -- base --------------------------------
 
 import Control.Monad.Fail ( MonadFail )
 import Data.Foldable      ( all, and, any )
 import Data.List          ( intercalate, zip )
-import Data.Typeable      ( typeOf )
 import GHC.Exts           ( toList )
 
 -- natural -----------------------------
 
 import Natural ( length )
 
--- options-applicative -----------------
+-- optparse-plus -----------------------
 
-import Options.Applicative ( ReadM, eitherReader )
+import OptParsePlus ( OptReader(readM) )
 
 -- parsers -----------------------------
 
@@ -39,21 +35,15 @@ import ParserPlus ( brackets, whitespaces )
 
 import Text.RE.PCRE.Text ()
 
--- text --------------------------------
-
-import Data.Text qualified as T
-
 -- textual-plus ------------------------
 
 import TextualPlus ( TextualPlus(textual') )
 
--- trifecta ----------------------------
+------------------------------------------------------------
+--                     local imports                      --
+------------------------------------------------------------
 
-import Text.Trifecta.Result ( Result(Failure, Success) )
-
--- trifecta-plus -----------------------
-
-import TrifectaPlus ( eiText, tParse )
+import Brian.TrifectaPlus qualified as TrifectaPlus
 
 --------------------------------------------------------------------------------
 
@@ -84,6 +74,11 @@ instance Eq α ⇒ Eq (PredicateFilter α) where
     (length xs ≡ length xs'): [ x ≡ x' | (x,x') ← zip (toList xs) (toList xs') ]
   _           == _            = 𝕱
 
+--------------------
+
+instance (TextualPlus α, Typeable α) ⇒ OptReader (PredicateFilter α) where
+  readM = TrifectaPlus.readM
+
 ----------------------------------------
 
 parseFilts ∷ ∀ α μ . (MonadFail μ, CharParsing μ, TextualPlus α) ⇒
@@ -96,35 +91,9 @@ parseFilts =
 ----------------------------------------
 
 instance TextualPlus α ⇒ TextualPlus (PredicateFilter α) where
-  textual' = ((string "⋀" ∤ string "&&") ⋪ whitespaces) ⋫ (EF_Conj ⊳ (whitespaces ⋫ parseFilts))
-           ∤ (string "⋁" ∤ string "||") ⋫ (EF_Disj ⊳ parseFilts)
+  textual' = (string "⋀" ⋪ whitespaces) ⋫ (EF_Conj ⊳ (whitespaces ⋫ parseFilts))
+           ∤ (string "⋁" ⋪ whitespaces) ⋫ (EF_Disj ⊳ (whitespaces ⋫ parseFilts))
            ∤ EF_Pred ⊳ textual'
-
-----------------------------------------
-
-trifectTextual ∷ ∀ β α η .
-                 (TextualPlus β, Printable α, Typeable β, MonadError 𝕋 η) ⇒
-                 α → η β
-trifectTextual (toText → z) =
-  let fromParsed (Success a) = a
-      -- this function exists solely to provide a hypothetical value to reflect
-      -- on
-      fromParsed (Failure _) = error "this should never be evaluated"
-      parsedZ                = tParse z
-      typ                    = typeOf $ fromParsed parsedZ
-   in case parsedZ of
-        Success a → return a
-        Failure e →
-          throwError $ [fmt|failed to parse '%t' as '%w': %t|] z typ (eiText e)
-
-{-
-instance (TextualPlus α, Typeable α) ⇒ OptParser (PredicateFilter α) where
-  optParse = argument (eitherReader (first T.unpack ⊳ trifectTextual))
-                      (metavar "PREDICATE" ⊕ help "episode filter")
--}
-
-readM ∷ (TextualPlus α, Typeable α) ⇒ ReadM α
-readM = eitherReader $ first T.unpack ⊳ trifectTextual
 
 ----------------------------------------
 

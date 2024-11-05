@@ -84,17 +84,19 @@ import Data.Time.Format.ISO8601 ( iso8601Show )
 
 import Brian.EntryTests qualified as EntryTests
 
-import Brian.Actress     ( ActressRefTable, ActressTable )
-import Brian.BTag        ( TagRefTable, TagTable )
-import Brian.Day         ( Day(Day) )
-import Brian.Entry       ( EntryTable, insertEntry, parseEntries, readEntry )
-import Brian.EntryFilter ( EntryFilter, gFilt, matchFilt )
-import Brian.ID          ( ID(ID) )
-import Brian.Options     ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
-                           Options, dbFile, mode, optionsParser )
-import Brian.SQLite      ( Table, createTable, query, reCreateTable )
-import Brian.SQLiteError ( AsSQLiteError, UsageSQLiteFPIOTPError,
-                           throwSQLMiscError )
+import Brian.Actress          ( ActressRefTable, ActressTable )
+import Brian.BTag             ( TagRefTable, TagTable )
+import Brian.Day              ( Day(Day) )
+import Brian.DBEntryPreFilter ( DBEntryPreFilter, whereClause )
+import Brian.Entry            ( EntryTable, insertEntry, parseEntries,
+                                readEntry )
+import Brian.EntryFilter      ( EntryFilter, gFilt, matchFilt )
+import Brian.ID               ( ID(ID) )
+import Brian.Options          ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
+                                Options, dbFile, mode, optionsParser )
+import Brian.SQLite           ( Table, createTable, query, reCreateTable )
+import Brian.SQLiteError      ( AsSQLiteError, UsageSQLiteFPIOTPError,
+                                throwSQLMiscError )
 
 --------------------------------------------------------------------------------
 
@@ -152,25 +154,29 @@ maybeDumpEntry c q mck (Only eid) = do
 
 ----------------------------------------
 
-queryEntries ∷ (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
+queryEntries ∷ ∀ ε ω μ .
+               (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
                 HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
-               Connection → EntryFilter → 𝕄 ℤ → DoMock → μ ()
-queryEntries c q d mck = do
+               Connection → EntryFilter → 𝕄 DBEntryPreFilter → 𝕄 ℤ → DoMock
+             → μ ()
+queryEntries c q b d mck = do
   let sel = "SELECT id FROM Entry"
   today ← liftIO $ utctDay ⊳ getCurrentTime
-  eids ← let ts = []
-             like_clauses = const "title LIKE ?" ⊳ ts
+  (like_clauses,ts) ← maybe (return ("", [])) whereClause b
+  eids ← let -- ts = []
+             -- like_clauses = const "title LIKE ?" ⊳ ts
+             -- (like_clauses,ts) = maybe ("", []) whereClauses b
              (date_clause,date_datum) =
                case d of
                  𝕹 → ([],[])
                  𝕵 d' → (["EntryDate > ?"],
                          [T.pack ∘ iso8601Show $ addDays (-1*d') today])
-             clauses      = date_clause ⊕ like_clauses
+             clauses      = date_clause ⊕ [like_clauses]
              sql   = Query $
                if clauses ≡ []
                then sel
                else [fmt|%t WHERE %t|] sel (T.intercalate " AND " clauses)
-         in  query Informational c sql (date_datum ⊕ ts) [] mck
+         in  query Informational c sql ts [] mck
   forM_ eids (maybeDumpEntry c q mck)
 
 ----------------------------------------
@@ -206,10 +212,10 @@ doMain mck opts = do
               warnIO' $ [fmt|inserted %d entries|] (length $ catMaybes ids)
               return ()
         case opts ⊣ mode of
-          ModeQuery    q d → queryEntries c q d mck
-          ModeCreate   f d → build c d NoReCreateTables f mck
-          ModeReCreate f d → build c d ReCreateTables   f mck
-          ModeAdd      f d → build c d NoCreateTables   f mck
+          ModeQuery    q b d → queryEntries c q b d mck
+          ModeCreate   f d   → build c d NoReCreateTables f mck
+          ModeReCreate f d   → build c d ReCreateTables   f mck
+          ModeAdd      f d   → build c d NoCreateTables   f mck
 
 ----------------------------------------
 

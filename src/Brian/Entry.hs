@@ -102,7 +102,7 @@ import Text.Wrap ( FillStrategy(FillIndent), WrapSettings(fillStrategy),
 import Brian.Day         qualified as Day
 import Brian.Description qualified as Description
 
-import Brian.Actress     ( Actresses, insertEntryActresses_, readActresses )
+import Brian.Actress     ( Actresses, insertEntryActresses_, mkActresses )
 import Brian.BTag        ( BTags, insertEntryTags_, readTags )
 import Brian.Day         ( Day )
 import Brian.Description ( Description(unDescription), more )
@@ -325,17 +325,27 @@ readEntry ∷ ∀ ε ω μ .
              MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
             Connection → ID → DoMock → μ (𝕄 Entry)
 readEntry conn eid mck = do
-  let fields ∷ [𝕋]
-      fields = [ "title", "medium", "description", "episodeid", "episodename"
-               , "entrydate" ]
-      sql = Query $ [fmt|SELECT %L FROM Entry WHERE ID = ?|] fields
+
+-- select Entry.id,title,GROUP_CONCAT(Actress.actress,', ') from Entry,ActressRef,Actress where title like 'Zero%' AND ActressRef.recordid = Entry.id AND Actress.id = ActressRef.actressid AND actress LIKE '%k%';
+
+  let sql = let tables ∷ [𝕋] = [ "Entry", "Actress", "ActressRef" ]
+                fields ∷ [𝕋] = [ "title", "medium", "description", "episodeid"
+                               , "episodename", "entrydate"
+                               , "GROUP_CONCAT(Actress.actress, ', ')"
+                               ]
+                wheres ∷ [𝕋] = [ "Entry.id = ?"
+                               , "ActressRef.recordid = Entry.id"
+                               , "Actress.id = ActressRef.actressid"
+                               ]
+            in  Query $ [fmt|SELECT %L FROM %L WHERE %t|]
+                        fields tables (T.intercalate " AND " wheres)
   query Informational conn sql (Only eid) [] mck ≫ \ case
     []                    → return 𝕹
 
-    [(ttle,mdm,desc,epid,epname,edate)] → do
+    [(ttle,mdm,desc,epid,epname,edate,actrsss∷𝕋)] → do
       tgs  ← readTags      conn eid mck
-      acts ← readActresses conn eid mck
-      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) acts tgs desc (epi epid epname) edate
+      return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) (mkActresses $ T.splitOn ", " actrsss)
+                         tgs desc (epi epid epname) edate
 
     xs                    →
       throwSQLMiscError $ [fmtT|too many (%d) entries found for %d|]

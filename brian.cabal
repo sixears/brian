@@ -63,6 +63,7 @@ library
                      , Brian.NumberParsing
                      , Brian.Options
                      , Brian.Parsers
+                     , Brian.PredicateFilter
                      , Brian.SQLite
                      , Brian.SQLiteError
                      , Brian.TagSoup
@@ -73,9 +74,12 @@ library
                     , DerivingStrategies
                     , FlexibleContexts
                     , FlexibleInstances
+                    , FunctionalDependencies
+                    , GADTs
                     , GeneralizedNewtypeDeriving
                     , ImportQualifiedPost
                     , LambdaCase
+                    , MultiParamTypeClasses
                     , NamedFieldPuns
                     , NoImplicitPrelude
                     , OverloadedStrings
