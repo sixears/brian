@@ -27,7 +27,7 @@ import Control.Applicative ( Alternative )
 import Control.Monad.Fail  ( MonadFail )
 import Data.Either         ( partitionEithers )
 import Data.List           ( filter, takeWhile )
-import Data.Maybe          ( catMaybes )
+import Data.Maybe          ( catMaybes, fromMaybe )
 import Data.Proxy          ( Proxy(Proxy) )
 import System.IO           ( putStrLn )
 
@@ -37,7 +37,7 @@ import Control.Lens.Getter ( view )
 
 -- logging-effect ----------------------
 
-import Control.Monad.Log ( MonadLog, Severity(Informational) )
+import Control.Monad.Log ( MonadLog, Severity(Debug, Informational) )
 
 -- log-plus ----------------------------
 
@@ -103,7 +103,7 @@ import Brian.Day         qualified as Day
 import Brian.Description qualified as Description
 
 import Brian.Actress     ( Actresses, insertEntryActresses_, mkActresses )
-import Brian.BTag        ( BTags, insertEntryTags_, readTags )
+import Brian.BTag        ( BTags, btags, insertEntryTags_ )
 import Brian.Day         ( Day )
 import Brian.Description ( Description(unDescription), more )
 import Brian.Episode     ( Episode, EpisodeID(EpisodeID), EpisodeName, epID,
@@ -114,7 +114,7 @@ import Brian.Parsers     ( whitespace )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
                            ColumnType(CTypeInteger, CTypeText),
                            Table(columns, tName, type RowType),
-                           insertTableRows_, query, withinTransaction )
+                           insertTableRows_, query, sjoin, withinTransaction )
 import Brian.SQLiteError ( AsSQLiteError, throwSQLMiscError )
 import Brian.TagSoup     ( text, (≈), (≉) )
 import Brian.Title       ( Title, unTitle )
@@ -184,7 +184,6 @@ instance Printable Entry where
 data EntryRow = EntryRow { _erRecordNumber :: ID
                          , _erTitle        :: Title
                          , _erMedium       :: 𝕄 Medium
-                         , _arActresses    :: Actresses
                          , _erDescription  :: Description
                          , _erEpisodeID    :: EpisodeID
                          , _erEpisodeName  :: 𝕄 EpisodeName
@@ -196,15 +195,14 @@ entryRow ∷ Day → Entry → EntryRow
 entryRow d e = EntryRow (e ⊣ recordNumber)
                         (e ⊣ title)
                         (e ⊣ medium)
-                        (e ⊣ actresses)
                         (e ⊣ description)
                         (maybe (EpisodeID []) (view epID) (e ⊣ episode))
                         (maybe 𝕹 (view epName) (e ⊣ episode))
                         d
 
 instance ToRow EntryRow where
-  toRow (EntryRow rn tt md ac ds epid epn ed) =
-    toRow (rn, unTitle tt, md, toField ac, toField ds, toField epid,toField epn,
+  toRow (EntryRow rn tt md ds epid epn ed) =
+    toRow (rn, unTitle tt, md, toField ds, toField epid,toField epn,
            toField ed)
 
 ----------------------------------------
@@ -280,7 +278,7 @@ instance Table EntryTable where
   columns _ =  ( ColumnDesc "id"          CTypeInteger [PrimaryKey] )
             :| [ ColumnDesc "title"       CTypeText []
                , ColumnDesc "medium"      CTypeText []
-               , ColumnDesc "actresses"   CTypeText []
+--               , ColumnDesc "actresses"   CTypeText []
                , ColumnDesc "description" CTypeText []
                , ColumnDesc "episodeid"   CTypeText []
                , ColumnDesc "episodename" CTypeText []
@@ -326,24 +324,44 @@ readEntry ∷ ∀ ε ω μ .
             Connection → ID → DoMock → μ (𝕄 Entry)
 readEntry conn eid mck = do
 
--- select Entry.id,title,GROUP_CONCAT(Actress.actress,', ') from Entry,ActressRef,Actress where title like 'Zero%' AND ActressRef.recordid = Entry.id AND Actress.id = ActressRef.actressid AND actress LIKE '%k%';
-
-  let sql = let tables ∷ [𝕋] = [ "Entry", "Actress", "ActressRef" ]
+  let sql = let actrsss = sjoin
+                  [ "SELECT ActressRef.recordid,"
+                  , "       GROUP_CONCAT(Actress.actress, ', ') as actresses"
+                  , "  FROM ActressRef, Actress"
+                  , " WHERE ActressRef.actressid = Actress.id"
+                  , " GROUP BY ActressRef.recordid"
+                  ]
+                tgss = sjoin
+                  [ "SELECT TagRef.recordid,"
+                  , "       GROUP_CONCAT(Tag.tag, ', ') as tags"
+                  , "  FROM TagRef,Tag"
+                  , " WHERE TagRef.tagid = Tag.id"
+                  , " GROUP BY TagRef.recordid"
+                  ]
+                left_joins = [ (actrsss, "Actresses", ("recordid", "Entry.id"))
+                             , (tgss, "Tags", ("recordid", "Entry.id"))
+                             ]
+                joinsql =
+                  [ [fmt|LEFT JOIN (%t) AS %t ON %t.%t = %t|]
+                      expr tab_as tab_as lhs rhs
+                    | (expr, tab_as, (lhs,rhs)) ← left_joins ]
+                tables ∷ [𝕋] = [ "Entry" ]
                 fields ∷ [𝕋] = [ "title", "medium", "description", "episodeid"
                                , "episodename", "entrydate"
-                               , "GROUP_CONCAT(Actress.actress, ', ')"
+                               , "Actresses.actresses", "Tags.tags"
                                ]
                 wheres ∷ [𝕋] = [ "Entry.id = ?"
-                               , "ActressRef.recordid = Entry.id"
-                               , "Actress.id = ActressRef.actressid"
+                               , "Actresses.recordid = Entry.id"
                                ]
-            in  Query $ [fmt|SELECT %L FROM %L WHERE %t|]
-                        fields tables (T.intercalate " AND " wheres)
+            in  Query $ [fmt|SELECT %L FROM %L %t WHERE %t|]
+                        fields tables (T.unwords joinsql)
+                        (T.intercalate " AND " wheres)
   query Informational conn sql (Only eid) [] mck ≫ \ case
     []                    → return 𝕹
 
-    [(ttle,mdm,desc,epid,epname,edate,actrsss∷𝕋)] → do
-      tgs  ← readTags      conn eid mck
+    row@[(ttle,mdm,desc,epid,epname,edate,actrsss∷𝕋,tagss ∷ 𝕄 𝕋)] → do
+      logio Debug ([fmtT|entry row: %w|] row) NoMock
+      let tgs = btags $ T.splitOn ", " (fromMaybe "" tagss)
       return ∘ 𝕵 $ Entry eid ttle (𝕵 mdm) (mkActresses $ T.splitOn ", " actrsss)
                          tgs desc (epi epid epname) edate
 

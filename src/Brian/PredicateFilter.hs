@@ -2,6 +2,8 @@
 module Brian.PredicateFilter
   ( PredicateFilter(..)
   , ShowablePredicate(predMatch)
+  , conj
+  , disj
   , matchFilt
   ) where
 
@@ -25,7 +27,7 @@ import OptParsePlus ( OptReader(readM) )
 -- parsers -----------------------------
 
 import Text.Parser.Char        ( CharParsing, char, string )
-import Text.Parser.Combinators ( sepByNonEmpty, try )
+import Text.Parser.Combinators ( eof, sepByNonEmpty, try )
 
 -- parser-plus -------------------------
 
@@ -56,10 +58,12 @@ class ShowablePredicate α β | α → β where
 data PredicateFilter α where EF_Conj :: NonEmpty (PredicateFilter α) -> PredicateFilter α
                              EF_Disj :: NonEmpty (PredicateFilter α) -> PredicateFilter α
                              EF_Pred :: α -> PredicateFilter α
+                             EF_None :: PredicateFilter α
 
 --------------------
 
 instance Show α ⇒ Show (PredicateFilter α) where
+  show EF_None      = "NONE"
   show (EF_Pred a)  = show a
   show (EF_Conj xs) = "AND[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
   show (EF_Disj xs) = "OR[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
@@ -91,13 +95,26 @@ parseFilts =
 ----------------------------------------
 
 instance TextualPlus α ⇒ TextualPlus (PredicateFilter α) where
-  textual' = (string "⋀" ⋪ whitespaces) ⋫ (EF_Conj ⊳ (whitespaces ⋫ parseFilts))
-           ∤ (string "⋁" ⋪ whitespaces) ⋫ (EF_Disj ⊳ (whitespaces ⋫ parseFilts))
+  textual' = ((string "⋀" ∤ string "AND") ⋪ whitespaces) ⋫
+                (EF_Conj ⊳ (whitespaces ⋫ parseFilts))
+           ∤ ((string "⋁" ∤ string "OR") ⋪ whitespaces) ⋫
+                (EF_Disj ⊳ (whitespaces ⋫ parseFilts))
            ∤ EF_Pred ⊳ textual'
 
 ----------------------------------------
 
+conj ∷ PredicateFilter α → PredicateFilter α → PredicateFilter α
+conj f f' = EF_Conj (f :| [f'])
+
+----------------------------------------
+
+disj ∷ PredicateFilter α → PredicateFilter α → PredicateFilter α
+disj f f' = EF_Disj (f :| [f'])
+
+----------------------------------------
+
 matchFilt ∷ ShowablePredicate α β ⇒ PredicateFilter α → β → 𝔹
+matchFilt EF_None      _ = 𝕿
 matchFilt (EF_Pred p)  e = predMatch p e
 matchFilt (EF_Conj ps) e = all (\ p -> matchFilt p e) ps
 matchFilt (EF_Disj ps) e = any (\ p -> matchFilt p e) ps

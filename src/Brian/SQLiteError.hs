@@ -31,7 +31,7 @@ import Database.SQLite.Simple ( FormatError(fmtMessage, fmtParams, fmtQuery),
 
 -- stdmain --------------------------------
 
-import StdMain.UsageError ( AsUsageError(_UsageError) )
+import StdMain.UsageError ( AsUsageError(_UsageError), UsageFPIOTPError )
 
 -- text-printer ------------------------
 
@@ -145,11 +145,11 @@ instance Printable SQLiteError where
 
 {-| combined @SQLiteError@, @UsageError@, @FPathError@, @IOError@,
     @TextualParseError@ -}
-data UsageSQLiteFPIOTPError = USFPIOTPE_UFPIOTPE_ERROR UsageSQLiteFPIOTPError
+data UsageSQLiteFPIOTPError = USFPIOTPE_UFPIOTPE_ERROR UsageFPIOTPError
                             | USFPIOTPE_SQLITE_ERROR SQLiteError
   deriving (Eq, Generic)
 
-_USFPIOTPE_UFPIOTPE_ERROR ∷ Prism' UsageSQLiteFPIOTPError UsageSQLiteFPIOTPError
+_USFPIOTPE_UFPIOTPE_ERROR ∷ Prism' UsageSQLiteFPIOTPError UsageFPIOTPError
 _USFPIOTPE_UFPIOTPE_ERROR =
   prism' (\ e → USFPIOTPE_UFPIOTPE_ERROR e)
          (\ case USFPIOTPE_UFPIOTPE_ERROR e → 𝕵 e; _ → 𝕹)

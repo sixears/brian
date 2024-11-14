@@ -16,7 +16,6 @@ module Brian.BTag
   , insertTagRefs_
   , insertTags
   , insertTags_
-  , readTags
   , tagsRows
   ) where
 
@@ -48,9 +47,8 @@ import Text.Parser.Combinators ( sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple           ( Connection, Only(Only), Query(Query),
-                                          SQLData(SQLText), ToRow(toRow),
-                                          fromOnly )
+import Database.SQLite.Simple           ( Connection, Only, Query(Query),
+                                          SQLData(SQLText), ToRow(toRow) )
 import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
 
@@ -75,7 +73,7 @@ import Brian.SQLite      ( ColumnDesc(ColumnDesc),
                            ColumnFlag(FlagUnique, NoInsert, PrimaryKey),
                            ColumnType(CTypeInteger, CTypeText),
                            Table(columns, tName, type RowType), execute,
-                           insertTableRows_, query, withinTransaction )
+                           insertTableRows_, withinTransaction )
 import Brian.SQLiteError ( AsSQLiteError )
 
 --------------------------------------------------------------------------------
@@ -215,16 +213,5 @@ insertEntryTags ∷ (MonadIO μ,
 insertEntryTags conn n tgs mck =
   withinTransaction conn mck $ insertEntryTags_ conn n tgs mck
 
-----------------------------------------
-
-readTags ∷ ∀ ε α ω μ .
-           (MonadIO μ, ToField α, Show α,
-            AsSQLiteError ε, Printable ε, MonadError ε μ,
-            Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
-           Connection → α → DoMock → μ BTags
-readTags conn n mck =
-  let sql = let where_ = "WHERE recordid = ? AND id = tagid"
-            in  Query $ [fmt|SELECT tag FROM Tag,TagRef %t|] where_
-  in  btags ⊳ (fromOnly ⊳⊳ query Informational conn sql (Only n) [] mck)
 
 -- that's all, folks! ----------------------------------------------------------

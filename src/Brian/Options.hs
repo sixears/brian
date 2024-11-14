@@ -24,7 +24,7 @@ import FPath.Parseable qualified
 
 import Options.Applicative ( CommandFields, Mod, Parser, argument, auto,
                              command, help, info, long, metavar, option,
-                             progDesc, short, subparser )
+                             progDesc, short, subparser, value )
 
 -- optparse-plus -----------------------
 
@@ -42,6 +42,7 @@ import Brian.Day              ( Day )
 import Brian.DBEntryPreFilter ( DBEntryPreFilter )
 import Brian.EntryFilter      ( EntryFilter )
 import Brian.OptParser        ( optParse )
+import Brian.PredicateFilter  ( PredicateFilter(EF_None) )
 import Brian.SQLiteError      ( AsSQLiteError )
 
 --------------------------------------------------------------------------------
@@ -49,7 +50,7 @@ import Brian.SQLiteError      ( AsSQLiteError )
 data Mode = ModeCreate (𝕄 File) (𝕄 Day)
           | ModeReCreate (𝕄 File) (𝕄 Day)
           | ModeAdd (𝕄 File) (𝕄 Day)
-          | ModeQuery EntryFilter (𝕄 DBEntryPreFilter) (𝕄 ℤ)
+          | ModeQuery (𝕄 EntryFilter) DBEntryPreFilter (𝕄 ℕ)
 
 ------------------------------------------------------------
 
@@ -76,16 +77,17 @@ optionsParser =
       entry_date = option OptParsePlus.readM (ю [ long "entry-date"
                                                 , short 'd',help "entry-date" ])
       query_desc = progDesc "query the database"
-      query_info = let prefilt_m  ∷ Parser (𝕄 DBEntryPreFilter)
-                       prefilt_m  = optional ∘ option readM $ ю [ short 'b'
-                                                                ,metavar "PREDICATE", help "entry DB pre-filter"
-
-                                                                ]
+      query_info = let prefilt_h  = help "entry DB pre-filter"
+                       prefilt_m  ∷ Parser DBEntryPreFilter
+                       prefilt_m  =
+                         option readM $ ю [ short 'b', prefilt_h, value EF_None
+                                          , metavar "PREDICATE" ]
                        query_pars =
                          let hlp = "look back n days' entries"
                          in  option auto (ю [ short 'y', long "days", help hlp])
                        query_pars_m = optional query_pars
-                   in  info (ModeQuery ⊳ optParse ⊵ prefilt_m ⊵ query_pars_m)
+                   in  info (ModeQuery ⊳ optional optParse
+                                       ⊵ prefilt_m ⊵ query_pars_m)
                             query_desc
       mode_commands ∷ [Mod CommandFields Mode] =
         [ command "create"

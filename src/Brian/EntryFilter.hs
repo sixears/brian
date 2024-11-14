@@ -1,9 +1,9 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.EntryFilter
   ( EntryFilter
-    -- , entryMatches
   , gFilt
   , matchFilt
+  , tests
   ) where
 
 import Base1T hiding ( toList )
@@ -113,12 +113,13 @@ gFilt e =
       paired_words ∷ 𝕋 → [(𝕋,𝕋)] = (\ xs → zip xs (tailSafe xs)) ∘ words
       descn_filter ∷ Description → 𝔹 =
         let f ∷ (𝕋,𝕋) → 𝔹
-              = \ (a,b) → "gag" `T.isPrefixOf` (T.toLower b)
+              = \ (a,b) → "gag" `T.isInfixOf` (T.toLower b)
                         ∧ (T.toLower a) ∉ ["no", "not"]
         in  any f ∘ paired_words ∘ toText
-      tag_filter   = [pcre|^gagtype_(?!hand)|]    -- negative lookahead
+      tag_filter = [pcre|^gagtype_(?!hand)|]    -- negative lookahead
+      etags = toText ⩺ unBTags $ e ⊣ tags
   in  or [ descn_filter (e ⊣ description)
-         , any (\ t → matched $ t ?=~ tag_filter) $ toText ⩺ unBTags $ e ⊣ tags
+         , etags ≡ [] ∨ any (\ t → matched $ t ?=~ tag_filter) etags
          ]
 
 ------------------------------------------------------------
@@ -246,7 +247,7 @@ instance TextualPlus ShowableEntryFilter where
            ∤ char 'a' ⋫ (sef_actress_pcre ⊳ parseRE)
            ∤ char 'e' ⋫ (sef_epname_pcre ⊳ parseRE)
 
---------------------------------------------------------------------------------
+-- tests -----------------------------------------------------------------------
 
 {-| unit tests -}
 parseTests ∷ TestTree
@@ -259,7 +260,7 @@ parseTests =
     , testParse "⋀[t{homeLand},p(04.05)]"
       (EF_Conj $ (EF_Pred $ sef_title_pcre [pcre|homeLand|])
               :| [EF_Pred ∘ sef_epid_match $ EpIDFilter [4,5]])
-    , testParse "&& [ p(006)  ,t{homeLand} ]"
+    , testParse "AND [ p(006)  ,t{homeLand} ]"
       (EF_Conj $ (EF_Pred $ sef_epid_match (EpIDFilter [6]))
               :| [EF_Pred $ sef_title_pcre [pcre|homeLand|]])
     , testParse "⋁[t{homeLand},p(04.05)]"

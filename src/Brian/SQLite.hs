@@ -18,6 +18,7 @@ module Brian.SQLite
   , query
   , query_
   , reCreateTable
+  , sjoin
   , withinTransaction
   ) where
 
@@ -43,7 +44,11 @@ import Control.Monad.Log ( MonadLog, Severity(Debug, Informational) )
 -- mockio-log --------------------------
 
 import MockIO.IOClass ( HasIOClass, IOClass(IOWrite) )
-import MockIO.Log     ( DoMock, HasDoMock, mkIOLME )
+import MockIO.Log     ( DoMock, HasDoMock, mkIOLME, mkIOLMER )
+
+-- natural -----------------------------
+
+import Natural ( length )
 
 -- sqlite-simple -----------------------
 
@@ -54,7 +59,7 @@ import Database.SQLite.Simple ( Connection, FormatError, FromRow, Query(Query),
 
 -- text --------------------------------
 
-import Data.Text qualified as Text
+import Data.Text qualified as T
 
 -- text-printer ------------------------
 
@@ -145,7 +150,7 @@ insertColumns (toList → cols) =
 instance Printable ColumnDesc where
   print (ColumnDesc nm tp flgs) = P.text $
     let x = [fmt|%T %T %t|]
-            nm tp (Text.intercalate " " $ filter (≢ "") $ toText ⊳ flgs)
+            nm tp (T.intercalate " " $ filter (≢ "") $ toText ⊳ flgs)
     in x
 ------------------------------------------------------------
 
@@ -195,7 +200,9 @@ query sev conn sql r mock_value =
                  , Exception.Handler $ return ∘ toAsSQLiteError @ResultError
                  ]
       io       = ((SQLite.query conn sql r) `catches` handlers)
-  in  mkIOLME sev IOWrite ([fmtT|sqlqy %w %w|] sql r) mock_value io
+      sqlqy    = [fmtT|sqlqy %w %w|] sql r
+      records  = pure ∘ [fmtT|query returned %d records|] ∘ length
+  in  mkIOLMER sev IOWrite sqlqy (𝕵 $ records) mock_value io
 
 ----------------------------------------
 
@@ -239,7 +246,7 @@ createTable ∷ ∀ ε α ω μ . Table α ⇒
                MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
               Connection → Proxy α → DoMock → μ ()
 createTable conn p mck =
-  let cols = Text.intercalate ", " $ createColumns p
+  let cols = T.intercalate ", " $ createColumns p
       sql = fromString $ [fmt|CREATE TABLE %T (%t)|] (tName p) cols
   in  execute_ Informational conn sql mck
 
@@ -292,5 +299,10 @@ insertTableRows ∷ ∀ ε α β ω μ .
                 → μ [(RowType α, [β])]
 insertTableRows sev p conn rows extra mck =
   withinTransaction conn mck $ insertTableRows_ sev p conn rows extra mck
+
+----------------------------------------
+
+sjoin ∷ [𝕋] → 𝕋
+sjoin = T.unwords ∘ fmap (T.dropWhile (≡ ' '))
 
 -- that's all, folks! ----------------------------------------------------------

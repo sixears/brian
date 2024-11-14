@@ -3,8 +3,9 @@ module Brian
   ( main
   ) where
 
+import Debug.Trace ( traceShow )
+
 import Base1T
-import Prelude ( (*) )
 
 -- base --------------------------------
 
@@ -74,27 +75,32 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 
 -- time --------------------------------
 
-import Data.Time.Calendar       ( addDays )
-import Data.Time.Clock          ( getCurrentTime, utctDay )
-import Data.Time.Format.ISO8601 ( iso8601Show )
+import Data.Time.Clock ( getCurrentTime, utctDay )
 
 ------------------------------------------------------------
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.EntryTests qualified as EntryTests
+import Brian.DBEntryPreFilter qualified as DBEntryPreFilter
+import Brian.EntryFilter      qualified as EntryFilter
+import Brian.EntryTests       qualified as EntryTests
 
 import Brian.Actress          ( ActressRefTable, ActressTable )
 import Brian.BTag             ( TagRefTable, TagTable )
 import Brian.Day              ( Day(Day) )
-import Brian.DBEntryPreFilter ( DBEntryPreFilter, whereClause )
+import Brian.DBEntryPreFilter ( DBEntryPreFilter,
+                                DBEntryPreFilterItem(DBEntryEntryDateFilter),
+                                whereClause )
 import Brian.Entry            ( EntryTable, insertEntry, parseEntries,
                                 readEntry )
 import Brian.EntryFilter      ( EntryFilter, gFilt, matchFilt )
 import Brian.ID               ( ID(ID) )
 import Brian.Options          ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
                                 Options, dbFile, mode, optionsParser )
-import Brian.SQLite           ( Table, createTable, query, reCreateTable )
+import Brian.PredicateFilter  ( PredicateFilter(EF_Conj, EF_None, EF_Pred),
+                                conj )
+import Brian.SQLite           ( Table, createTable, query, reCreateTable,
+                                sjoin )
 import Brian.SQLiteError      ( AsSQLiteError, UsageSQLiteFPIOTPError,
                                 throwSQLMiscError )
 
@@ -144,44 +150,49 @@ maybeDumpEntry ∷ ∀ ε ω μ .
                  (MonadIO μ, Default ω, MonadLog (Log ω) μ,
                   AsSQLiteError ε, Printable ε, MonadError ε μ,
                   MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-                 Connection → EntryFilter → DoMock → (Only ℤ) → μ ()
+                 Connection → 𝕄 EntryFilter → DoMock → (Only ℤ) → μ ()
 maybeDumpEntry c q mck (Only eid) = do
   e ← readEntry c (ID $ fromIntegral eid) mck
   case e of
-    𝕵 e' | gFilt e' ∧ matchFilt q e' → say $ [fmtT|%T\n\n----|] e'
-         | otherwise         → return ()
-    𝕹    → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
+    𝕵 ē | gFilt ē ∧ maybe 𝕿 (flip matchFilt ē) q → say $ [fmtT|%T\n\n----|] ē
+        | otherwise         → return ()
+    𝕹   → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
 
 ----------------------------------------
 
 queryEntries ∷ ∀ ε ω μ .
                (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
                 HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
-               Connection → EntryFilter → 𝕄 DBEntryPreFilter → 𝕄 ℤ → DoMock
+               Connection → 𝕄 EntryFilter → DBEntryPreFilter → 𝕄 ℕ → DoMock
              → μ ()
-queryEntries c q b d mck = do
-  let sel = "SELECT id FROM Entry"
-  today ← liftIO $ utctDay ⊳ getCurrentTime
-  (like_clauses,ts) ← maybe (return ("", [])) whereClause b
-  eids ← let -- ts = []
-             -- like_clauses = const "title LIKE ?" ⊳ ts
-             -- (like_clauses,ts) = maybe ("", []) whereClauses b
-             (date_clause,date_datum) =
-               case d of
-                 𝕹 → ([],[])
-                 𝕵 d' → (["EntryDate > ?"],
-                         [T.pack ∘ iso8601Show $ addDays (-1*d') today])
-             clauses      = date_clause ⊕ [like_clauses]
-             sql   = Query $
-               if clauses ≡ []
-               then sel
-               else [fmt|%t WHERE %t|] sel (T.intercalate " AND " clauses)
+queryEntries c q b d mck = traceShow ("b",b) $ do
+  let sel = sjoin [ "SELECT DISTINCT Entry.id"
+                  , "  FROM Entry, ActressRef, Actress"
+                  , "  LEFT JOIN TagRef ON TagRef.recordid = Entry.id"
+                  , "  LEFT JOIN Tag    ON TagRef.tagid    = Tag.id"
+                  , " WHERE     ActressRef.recordid  = Entry.id"
+                  , "       AND ActressRef.actressid = Actress.id"
+                  ]
+  let ḋ = DBEntryEntryDateFilter ⊳ d
+  let ḃ = case (b,ḋ) of
+             (ɓ, 𝕵 đ) → 𝕵 $ EF_Conj (ɓ:| [EF_Pred đ])
+--             (𝕹  , 𝕵 đ) → 𝕵 $ EF_Pred đ
+             _        → 𝕵 b
+  (like_clauses,ts) ← maybe (return ([], [])) (first pure ⩺ whereClause) ḃ
+  (like_clauses,ts) ← do (lc,ts_) ← whereClause DBEntryPreFilter.gFilt
+                         return (like_clauses ⊕ [lc], ts ⊕ ts_)
+  (like_clauses,ts) ← whereClause $ conj b $ conj DBEntryPreFilter.gFilt (fromMaybe EF_None $ EF_Pred ∘ DBEntryEntryDateFilter ⊳ d)
+  eids ← let sql   = Query $
+--               if like_clauses ≡ []
+--               then sel
+               {- else -} [fmt|%t AND %t|] sel like_clauses -- (T.intercalate " AND " like_clauses)
          in  query Informational c sql ts [] mck
   forM_ eids (maybeDumpEntry c q mck)
 
 ----------------------------------------
 
-readBrian ∷ (MonadIO μ, MonadLog (Log ω) μ, Default ω,HasIOClass ω,HasDoMock ω,
+readBrian ∷ ∀ ε ω μ .
+            (MonadIO μ, MonadLog (Log ω) μ, Default ω,HasIOClass ω,HasDoMock ω,
              AsIOError ε, MonadError ε μ) ⇒ 𝕄 File → μ [Tag 𝕋]
 readBrian input = do
   t ← case input of
@@ -230,7 +241,8 @@ main =
 {-| unit tests -}
 tests ∷ TestTree
 tests =
-  testGroup "Brian" [ EntryTests.tests ]
+  testGroup "Brian" [ EntryTests.tests, EntryFilter.tests
+                    , DBEntryPreFilter.tests ]
 
 _test ∷ IO ExitCode
 _test = runTestTree tests
