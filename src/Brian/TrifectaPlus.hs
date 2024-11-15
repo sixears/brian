@@ -8,8 +8,7 @@ import Prelude ( error )
 
 -- base --------------------------------
 
-import Control.Monad.Fail ( MonadFail )
-import Data.Typeable      ( typeOf )
+import Data.Typeable ( typeOf )
 
 -- optparse-applicative ----------------
 
@@ -17,7 +16,6 @@ import Options.Applicative ( ReadM, eitherReader )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char        ( CharParsing )
 import Text.Parser.Combinators ( eof )
 
 -- text --------------------------------
@@ -35,7 +33,7 @@ import TextualPlus ( TextualPlus(textual') )
 
 -- trifecta-plus -----------------------
 
-import TrifectaPlus ( eiText, tParse )
+import TrifectaPlus ( eiText )
 
 --------------------------------------------------------------------------------
 

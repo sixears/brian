@@ -27,7 +27,7 @@ import OptParsePlus ( OptReader(readM) )
 -- parsers -----------------------------
 
 import Text.Parser.Char        ( CharParsing, char, string )
-import Text.Parser.Combinators ( eof, sepByNonEmpty, try )
+import Text.Parser.Combinators ( sepByNonEmpty, try )
 
 -- parser-plus -------------------------
 

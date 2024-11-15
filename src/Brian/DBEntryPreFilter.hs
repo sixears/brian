@@ -7,8 +7,6 @@ module Brian.DBEntryPreFilter
   , whereClause
   ) where
 
-import Debug.Trace ( traceShow )
-
 import Base1T
 import Prelude ( (*) )
 
@@ -119,7 +117,7 @@ type DBEntryPreFilter = PredicateFilter DBEntryPreFilterItem
 whereClause ∷ MonadIO μ ⇒ DBEntryPreFilter → μ (𝕋,[SQLData])
 whereClause EF_None      = return ("TRUE",[])
 whereClause (EF_Pred p)  = itemWhereClause p
-whereClause (EF_Conj ps) = traceShow ("ps",ps) $ do
+whereClause (EF_Conj ps) = do
   (clauses,datums) ← unzip ⊳ mapM whereClause ps
   return (parenthesize (T.intercalate " AND " $ toList clauses),
           ю (toList ⊳ datums))

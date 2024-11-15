@@ -3,14 +3,13 @@ module Brian
   ( main
   ) where
 
-import Debug.Trace ( traceShow )
-
 import Base1T
 
 -- base --------------------------------
 
 import Control.Monad      ( (=<<) )
 import Data.Function      ( flip )
+import Data.List          ( repeat, zip )
 import Data.Maybe         ( catMaybes, fromMaybe )
 import Data.Proxy         ( Proxy(Proxy) )
 import System.Environment ( getArgs )
@@ -53,8 +52,8 @@ import Control.Exception.Safe ( finally )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), close,
-                                open )
+import Database.SQLite.Simple ( Connection, Only(Only), Query(Query),
+                                SQLData(SQLText), close, open )
 
 -- stdmain --------------------------------
 
@@ -71,6 +70,7 @@ import Data.Text qualified as T
 
 -- textual-plus ------------------------
 
+import TextualPlus                         ( quote )
 import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 
 -- time --------------------------------
@@ -97,8 +97,7 @@ import Brian.EntryFilter      ( EntryFilter, gFilt, matchFilt )
 import Brian.ID               ( ID(ID) )
 import Brian.Options          ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
                                 Options, dbFile, mode, optionsParser )
-import Brian.PredicateFilter  ( PredicateFilter(EF_Conj, EF_None, EF_Pred),
-                                conj )
+import Brian.PredicateFilter  ( PredicateFilter(EF_None, EF_Pred), conj )
 import Brian.SQLite           ( Table, createTable, query, reCreateTable,
                                 sjoin )
 import Brian.SQLiteError      ( AsSQLiteError, UsageSQLiteFPIOTPError,
@@ -160,33 +159,34 @@ maybeDumpEntry c q mck (Only eid) = do
 
 ----------------------------------------
 
+sqlFmt ∷ [𝕋] → [SQLData] → 𝕋
+sqlFmt sql ts =
+  let tdata ∷ 𝕄 SQLData → 𝕋 = \ case
+        𝕹             → ""
+        𝕵 (SQLText t) → quote t
+        𝕵 s           → T.pack $ show s
+      sql_pieces = T.splitOn "?" (T.unlines sql)
+  in ю [ a ⊕ (tdata b) | (a,b) ← zip (sql_pieces) ((𝕵 ⊳ ts) ⊕ repeat 𝕹) ]
+
+--------------------
+
 queryEntries ∷ ∀ ε ω μ .
                (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
                 HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
                Connection → 𝕄 EntryFilter → DBEntryPreFilter → 𝕄 ℕ → DoMock
              → μ ()
-queryEntries c q b d mck = traceShow ("b",b) $ do
-  let sel = sjoin [ "SELECT DISTINCT Entry.id"
-                  , "  FROM Entry, ActressRef, Actress"
-                  , "  LEFT JOIN TagRef ON TagRef.recordid = Entry.id"
-                  , "  LEFT JOIN Tag    ON TagRef.tagid    = Tag.id"
-                  , " WHERE     ActressRef.recordid  = Entry.id"
-                  , "       AND ActressRef.actressid = Actress.id"
-                  ]
-  let ḋ = DBEntryEntryDateFilter ⊳ d
-  let ḃ = case (b,ḋ) of
-             (ɓ, 𝕵 đ) → 𝕵 $ EF_Conj (ɓ:| [EF_Pred đ])
---             (𝕹  , 𝕵 đ) → 𝕵 $ EF_Pred đ
-             _        → 𝕵 b
-  (like_clauses,ts) ← maybe (return ([], [])) (first pure ⩺ whereClause) ḃ
-  (like_clauses,ts) ← do (lc,ts_) ← whereClause DBEntryPreFilter.gFilt
-                         return (like_clauses ⊕ [lc], ts ⊕ ts_)
+queryEntries c q b d mck = do
+  let sel = [ "SELECT DISTINCT Entry.id"
+            , "  FROM Entry, ActressRef, Actress"
+            , "  LEFT JOIN TagRef ON TagRef.recordid = Entry.id"
+            , "  LEFT JOIN Tag    ON TagRef.tagid    = Tag.id"
+            , " WHERE     ActressRef.recordid  = Entry.id"
+            , "       AND ActressRef.actressid = Actress.id"
+            ]
   (like_clauses,ts) ← whereClause $ conj b $ conj DBEntryPreFilter.gFilt (fromMaybe EF_None $ EF_Pred ∘ DBEntryEntryDateFilter ⊳ d)
-  eids ← let sql   = Query $
---               if like_clauses ≡ []
---               then sel
-               {- else -} [fmt|%t AND %t|] sel like_clauses -- (T.intercalate " AND " like_clauses)
-         in  query Informational c sql ts [] mck
+  let sql = sel ⊕ (("       AND " ⊕) ⊳ [like_clauses])
+
+  eids ← say (sqlFmt sql ts) ⪼ query Informational c (Query $ sjoin sql) ts [] mck
   forM_ eids (maybeDumpEntry c q mck)
 
 ----------------------------------------
