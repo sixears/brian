@@ -88,16 +88,17 @@ import Brian.EntryTests       qualified as EntryTests
 import Brian.Actress          ( ActressRefTable, ActressTable )
 import Brian.BTag             ( TagRefTable, TagTable )
 import Brian.Day              ( Day(Day) )
-import Brian.DBEntryPreFilter ( DBEntryPreFilter,
-                                DBEntryPreFilterItem(DBEntryEntryDateFilter),
-                                whereClause )
+import Brian.DBEntryPreFilter ( conj, dateFilter, null, whereClause )
 import Brian.Entry            ( EntryTable, insertEntry, parseEntries,
                                 readEntry )
-import Brian.EntryFilter      ( EntryFilter, gFilt, matchFilt )
+import Brian.EntryFilter      ( gFilt, matchFilt )
 import Brian.ID               ( ID(ID) )
-import Brian.Options          ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
-                                Options, dbFile, mode, optionsParser )
-import Brian.PredicateFilter  ( PredicateFilter(EF_None, EF_Pred), conj )
+import Brian.Options          ( GFilt(GFilt, NoGFilt),
+                                Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
+                                Options, QueryOpts, ShowSQL(ShowSQL), ageDays,
+                                dbFile, entryFilter, entryPreFilter, gfilt,
+                                mode, showSQL )
+import Brian.OptParser        ( OptParser(optParse) )
 import Brian.SQLite           ( Table, createTable, query, reCreateTable,
                                 sjoin )
 import Brian.SQLiteError      ( AsSQLiteError, UsageSQLiteFPIOTPError,
@@ -149,13 +150,15 @@ maybeDumpEntry ∷ ∀ ε ω μ .
                  (MonadIO μ, Default ω, MonadLog (Log ω) μ,
                   AsSQLiteError ε, Printable ε, MonadError ε μ,
                   MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-                 Connection → 𝕄 EntryFilter → DoMock → (Only ℤ) → μ ()
+                 Connection → QueryOpts → DoMock → (Only ℤ) → μ ()
 maybeDumpEntry c q mck (Only eid) = do
   e ← readEntry c (ID $ fromIntegral eid) mck
   case e of
-    𝕵 ē | gFilt ē ∧ maybe 𝕿 (flip matchFilt ē) q → say $ [fmtT|%T\n\n----|] ē
-        | otherwise         → return ()
     𝕹   → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
+    𝕵 ē →
+      let pre_filt = (q ⊣ gfilt ≡ NoGFilt) ∨ gFilt ē
+      in  when (pre_filt ∧ maybe 𝕿 (flip matchFilt ē) (q ⊣ entryFilter)) $
+               say ([fmtT|%T\n\n----|] ē)
 
 ----------------------------------------
 
@@ -173,9 +176,8 @@ sqlFmt sql ts =
 queryEntries ∷ ∀ ε ω μ .
                (MonadIO μ, Printable ε, AsSQLiteError ε, MonadError ε μ,
                 HasDoMock ω, HasIOClass ω, Default ω, MonadLog (Log ω) μ) ⇒
-               Connection → 𝕄 EntryFilter → DBEntryPreFilter → 𝕄 ℕ → DoMock
-             → μ ()
-queryEntries c q b d mck = do
+               Connection → QueryOpts → DoMock → μ ()
+queryEntries c q mck = do
   let sel = [ "SELECT DISTINCT Entry.id"
             , "  FROM Entry, ActressRef, Actress"
             , "  LEFT JOIN TagRef ON TagRef.recordid = Entry.id"
@@ -183,10 +185,17 @@ queryEntries c q b d mck = do
             , " WHERE     ActressRef.recordid  = Entry.id"
             , "       AND ActressRef.actressid = Actress.id"
             ]
-  (like_clauses,ts) ← whereClause $ conj b $ conj DBEntryPreFilter.gFilt (fromMaybe EF_None $ EF_Pred ∘ DBEntryEntryDateFilter ⊳ d)
+  let filter = let g_filt = case q ⊣ gfilt of
+                              GFilt   → DBEntryPreFilter.gFilt
+                              NoGFilt → DBEntryPreFilter.null
+                   d_filt = maybe null dateFilter (q ⊣ ageDays)
+               in  conj g_filt (conj (q ⊣ entryPreFilter) d_filt)
+  (like_clauses,ts) ← whereClause filter
   let sql = sel ⊕ (("       AND " ⊕) ⊳ [like_clauses])
 
-  eids ← say (sqlFmt sql ts) ⪼ query Informational c (Query $ sjoin sql) ts [] mck
+  eids ← do
+    when (q ⊣ showSQL ≡ ShowSQL) $ say (sqlFmt sql ts)
+    query Informational c (Query $ sjoin sql) ts [] mck
   forM_ eids (maybeDumpEntry c q mck)
 
 ----------------------------------------
@@ -223,17 +232,17 @@ doMain mck opts = do
               warnIO' $ [fmt|inserted %d entries|] (length $ catMaybes ids)
               return ()
         case opts ⊣ mode of
-          ModeQuery    q b d → queryEntries c q b d mck
-          ModeCreate   f d   → build c d NoReCreateTables f mck
-          ModeReCreate f d   → build c d ReCreateTables   f mck
-          ModeAdd      f d   → build c d NoCreateTables   f mck
+          ModeQuery    q   {- b d s -} → queryEntries c q {- b d s -} mck
+          ModeCreate   f d → build c d NoReCreateTables f mck
+          ModeReCreate f d → build c d ReCreateTables   f mck
+          ModeAdd      f d → build c d NoCreateTables   f mck
 
 ----------------------------------------
 
 main ∷ IO ()
 main =
   let desc ∷ 𝕋 = "manipulate a brianDB"
-  in  getArgs ≫ stdMain desc optionsParser (doMain @UsageSQLiteFPIOTPError)
+  in  getArgs ≫ stdMain desc optParse (doMain @UsageSQLiteFPIOTPError)
 
 
 -- tests -----------------------------------------------------------------------

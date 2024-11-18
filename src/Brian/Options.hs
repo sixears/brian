@@ -1,12 +1,19 @@
 {-# LANGUAGE UnicodeSyntax #-}
 
 module Brian.Options
-  ( Mode(..)
+  ( GFilt(..)
+  , Mode(..)
   , Options
+  , QueryOpts
+  , ShowSQL(..)
+  , ageDays
   , dbFile
-    --  , inputFile
+  , entryFilter
+  , entryPreFilter
+  , gfilt
   , mode
   , optionsParser
+  , showSQL
   ) where
 
 import Base1T
@@ -23,7 +30,7 @@ import FPath.Parseable qualified
 -- optparse-applicative ----------------
 
 import Options.Applicative ( CommandFields, Mod, Parser, argument, auto,
-                             command, help, info, long, metavar, option,
+                             command, flag, help, info, long, metavar, option,
                              progDesc, short, subparser, value )
 
 -- optparse-plus -----------------------
@@ -39,18 +46,78 @@ import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 ------------------------------------------------------------
 
 import Brian.Day              ( Day )
-import Brian.DBEntryPreFilter ( DBEntryPreFilter )
+import Brian.DBEntryPreFilter ( DBEntryPreFilter, null )
 import Brian.EntryFilter      ( EntryFilter )
-import Brian.OptParser        ( optParse )
-import Brian.PredicateFilter  ( PredicateFilter(EF_None) )
+import Brian.OptParser        ( OptParser(optParse) )
 import Brian.SQLiteError      ( AsSQLiteError )
 
 --------------------------------------------------------------------------------
 
+data ShowSQL = ShowSQL | NoShowSQL deriving (Eq)
+data GFilt = GFilt | NoGFilt deriving (Eq)
+
+------------------------------------------------------------
+
+data QueryOpts = QueryOpts { _entryFilter    :: 𝕄 EntryFilter
+                           , _entryPreFilter :: DBEntryPreFilter
+                           , _ageDays        :: 𝕄 ℕ
+                           , _showSQL        :: ShowSQL
+                           , _gfilt          :: GFilt
+                           }
+
+--------------------
+
+instance OptParser QueryOpts where
+  optParse = let prefilt_h  = help "entry DB pre-filter"
+                 prefilt_m  ∷ Parser DBEntryPreFilter
+                 prefilt_m  =
+                   option readM $ ю [ short 'b', prefilt_h, value null
+                                    , metavar "PREDICATE" ]
+                 query_pars =
+                   let hlp = "look back n days' entries"
+                   in  option auto (ю [ short 'y', long "days", help hlp])
+                 query_pars_m = optional query_pars
+                 show_sql = flag NoShowSQL ShowSQL (ю [ long "show-sql"
+                                                      , help "show sql"])
+                 g_filt   = flag GFilt     NoGFilt (ю [ long "no-g-filt"
+                                                      , help "no g filter"])
+             in  QueryOpts ⊳ optional optParse
+                           ⊵ prefilt_m
+                           ⊵ query_pars_m
+                           ⊵ show_sql
+                           ⊵ g_filt
+
+----------------------------------------
+
+entryFilter ∷ Lens' QueryOpts (𝕄 EntryFilter)
+entryFilter = lens _entryFilter (\ q f → q { _entryFilter = f })
+
+----------------------------------------
+
+entryPreFilter ∷ Lens' QueryOpts DBEntryPreFilter
+entryPreFilter = lens _entryPreFilter (\ q f → q { _entryPreFilter = f })
+
+----------------------------------------
+
+ageDays ∷ Lens' QueryOpts (𝕄 ℕ)
+ageDays = lens _ageDays (\ q f → q { _ageDays = f })
+
+----------------------------------------
+
+showSQL ∷ Lens' QueryOpts ShowSQL
+showSQL = lens _showSQL (\ q f → q { _showSQL = f })
+
+----------------------------------------
+
+gfilt ∷ Lens' QueryOpts GFilt
+gfilt = lens _gfilt (\ q f → q { _gfilt = f })
+
+------------------------------------------------------------
+
 data Mode = ModeCreate (𝕄 File) (𝕄 Day)
           | ModeReCreate (𝕄 File) (𝕄 Day)
           | ModeAdd (𝕄 File) (𝕄 Day)
-          | ModeQuery (𝕄 EntryFilter) DBEntryPreFilter (𝕄 ℕ)
+          | ModeQuery QueryOpts
 
 ------------------------------------------------------------
 
@@ -77,17 +144,19 @@ optionsParser =
       entry_date = option OptParsePlus.readM (ю [ long "entry-date"
                                                 , short 'd',help "entry-date" ])
       query_desc = progDesc "query the database"
-      query_info = let prefilt_h  = help "entry DB pre-filter"
+      query_info = {- let prefilt_h  = help "entry DB pre-filter"
                        prefilt_m  ∷ Parser DBEntryPreFilter
                        prefilt_m  =
-                         option readM $ ю [ short 'b', prefilt_h, value EF_None
+                         option readM $ ю [ short 'b', prefilt_h, value null
                                           , metavar "PREDICATE" ]
                        query_pars =
                          let hlp = "look back n days' entries"
                          in  option auto (ю [ short 'y', long "days", help hlp])
                        query_pars_m = optional query_pars
-                   in  info (ModeQuery ⊳ optional optParse
-                                       ⊵ prefilt_m ⊵ query_pars_m)
+                       show_sql = flag NoShowSQL ShowSQL (ю [ long "show-sql"
+                                                            , help "show sql"])
+                   in  -} info (ModeQuery ⊳ {- optional optParse
+                                       ⊵ prefilt_m ⊵ query_pars_m ⊵ show_sql -} optParse)
                             query_desc
       mode_commands ∷ [Mod CommandFields Mode] =
         [ command "create"
@@ -107,5 +176,8 @@ optionsParser =
         ]
   in  Options ⊳ subparser (ю mode_commands)
               ⊵ argument FPath.Parseable.readM (metavar "SQLITE-DB")
+
+instance (AsSQLiteError ε, AsTextualParseError ε, Printable ε) ⇒ OptParser (Options ε) where
+  optParse = optionsParser
 
 -- that's all, folks! ----------------------------------------------------------

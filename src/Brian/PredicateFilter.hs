@@ -58,23 +58,24 @@ class ShowablePredicate α β | α → β where
 data PredicateFilter α where EF_Conj :: NonEmpty (PredicateFilter α) -> PredicateFilter α
                              EF_Disj :: NonEmpty (PredicateFilter α) -> PredicateFilter α
                              EF_Pred :: α -> PredicateFilter α
-                             EF_None :: PredicateFilter α
+                             EF_NotPred :: α -> PredicateFilter α
 
 --------------------
 
 instance Show α ⇒ Show (PredicateFilter α) where
-  show EF_None      = "NONE"
-  show (EF_Pred a)  = show a
-  show (EF_Conj xs) = "AND[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
-  show (EF_Disj xs) = "OR[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
+  show (EF_Pred a)    = show a
+  show (EF_NotPred a) = "NOT{" ⊕ show a ⊕ "}"
+  show (EF_Conj xs)   = "AND[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
+  show (EF_Disj xs)   = "OR[" ⊕ intercalate "," (show ⊳ toList xs) ⊕ "]"
 
 --------------------
 
 instance Eq α ⇒ Eq (PredicateFilter α) where
-  EF_Pred a   == EF_Pred a'   = a == a'
-  EF_Conj xs  == EF_Conj xs'  = and $
+  EF_Pred    a   == EF_Pred a'     = a == a'
+  EF_NotPred a   == EF_NotPred a'  = a == a'
+  EF_Conj    xs  == EF_Conj xs'    = and $
     (length xs ≡ length xs'): [ x ≡ x' | (x,x') ← zip (toList xs) (toList xs') ]
-  EF_Disj xs  == EF_Disj xs'  = and $
+  EF_Disj    xs  == EF_Disj xs'    = and $
     (length xs ≡ length xs'): [ x ≡ x' | (x,x') ← zip (toList xs) (toList xs') ]
   _           == _            = 𝕱
 
@@ -104,7 +105,7 @@ instance TextualPlus α ⇒ TextualPlus (PredicateFilter α) where
 ----------------------------------------
 
 conj ∷ PredicateFilter α → PredicateFilter α → PredicateFilter α
-conj f f' = EF_Conj (f :| [f'])
+conj f f'      = EF_Conj (f :| [f'])
 
 ----------------------------------------
 
@@ -114,9 +115,9 @@ disj f f' = EF_Disj (f :| [f'])
 ----------------------------------------
 
 matchFilt ∷ ShowablePredicate α β ⇒ PredicateFilter α → β → 𝔹
-matchFilt EF_None      _ = 𝕿
-matchFilt (EF_Pred p)  e = predMatch p e
-matchFilt (EF_Conj ps) e = all (\ p -> matchFilt p e) ps
-matchFilt (EF_Disj ps) e = any (\ p -> matchFilt p e) ps
+matchFilt (EF_Pred p)    e = predMatch p e
+matchFilt (EF_NotPred p) e = not $ predMatch p e
+matchFilt (EF_Conj ps)   e = all (\ p -> matchFilt p e) ps
+matchFilt (EF_Disj ps)   e = any (\ p -> matchFilt p e) ps
 
 -- that's all, folks! ----------------------------------------------------------
