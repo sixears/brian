@@ -64,6 +64,8 @@ library
                      , Brian.Options
                      , Brian.Parsers
                      , Brian.PredicateFilter
+                     , Brian.QueryOpts
+                     , Brian.ShowSQL
                      , Brian.SQLite
                      , Brian.SQLiteError
                      , Brian.TagSoup

@@ -67,6 +67,9 @@ data DBEntryPreFilterItem = DBEntryTitleFilter 𝕋
                           | DBEntryActressFilter 𝕋
                           | DBEntryDescFilter 𝕋
                           | DBEntryTagFilter 𝕋
+                          | DBEntryMediumFilter 𝕋
+                          | DBEntryEpNameFilter 𝕋
+                          | DBEntryEpIDFilter 𝕋
                           | DBEntryEntryDateFilter ℕ
                           | DBEntryNullFilter
   deriving (Eq, Show)
@@ -81,13 +84,19 @@ instance TextualPlus DBEntryPreFilterItem where
         ∤ char 'T' ⋫ (DBEntryTitleFilter ⊳ braced)
         ∤ char 'a' ⋫ (DBEntryActressFilter ⊳ bracedGlobbed)
         ∤ char 'A' ⋫ (DBEntryActressFilter ⊳ braced)
+        ∤ char 'd' ⋫ (DBEntryDescFilter ⊳ bracedGlobbed)
+        ∤ char 'D' ⋫ (DBEntryDescFilter ⊳ braced)
+        ∤ char 'm' ⋫ (DBEntryMediumFilter ⊳ bracedGlobbed)
+        ∤ char 'M' ⋫ (DBEntryMediumFilter ⊳ braced)
+        ∤ char 'e' ⋫ (DBEntryEpNameFilter ⊳ bracedGlobbed)
+        ∤ char 'E' ⋫ (DBEntryEpNameFilter ⊳ braced)
+        ∤ char 'i' ⋫ (DBEntryEpIDFilter ⊳ bracedGlobbed)
+        ∤ char 'I' ⋫ (DBEntryEpIDFilter ⊳ braced)
         ∤ char 'y' ⋫ (DBEntryEntryDateFilter ⊳ parens (read ⊳ some digit))
         ∤ char 'g' ⋫ (DBEntryTagFilter ⊳ bracedGlobbed)
         ∤ char 'G' ⋫ (DBEntryTagFilter ⊳ braced)
 
--- AND monoid
--- pre-G
--- medium,description,episodeid,episodename,entrydate
+-- medium,description,episodeid,episodename
 
 --------------------
 

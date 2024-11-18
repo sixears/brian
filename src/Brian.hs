@@ -9,7 +9,6 @@ import Base1T
 
 import Control.Monad      ( (=<<) )
 import Data.Function      ( flip )
-import Data.List          ( repeat, zip )
 import Data.Maybe         ( catMaybes, fromMaybe )
 import Data.Proxy         ( Proxy(Proxy) )
 import System.Environment ( getArgs )
@@ -52,8 +51,8 @@ import Control.Exception.Safe ( finally )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, Only(Only), Query(Query),
-                                SQLData(SQLText), close, open )
+import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), close,
+                                open )
 
 -- stdmain --------------------------------
 
@@ -70,7 +69,6 @@ import Data.Text qualified as T
 
 -- textual-plus ------------------------
 
-import TextualPlus                         ( quote )
 import TextualPlus.Error.TextualParseError ( AsTextualParseError )
 
 -- time --------------------------------
@@ -93,14 +91,14 @@ import Brian.Entry            ( EntryTable, insertEntry, parseEntries,
                                 readEntry )
 import Brian.EntryFilter      ( gFilt, matchFilt )
 import Brian.ID               ( ID(ID) )
-import Brian.Options          ( GFilt(GFilt, NoGFilt),
-                                Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
-                                Options, QueryOpts, ShowSQL(ShowSQL), ageDays,
-                                dbFile, entryFilter, entryPreFilter, gfilt,
-                                mode, showSQL )
+import Brian.Options          ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
+                                Options, dbFile, mode )
 import Brian.OptParser        ( OptParser(optParse) )
-import Brian.SQLite           ( Table, createTable, query, reCreateTable,
-                                sjoin )
+import Brian.QueryOpts        ( GFilt(GFilt, NoGFilt), QueryOpts, ageDays,
+                                entryFilter, entryPreFilter, gfilt, showSQL )
+import Brian.ShowSQL          ( ShowSQL(ShowSQL) )
+import Brian.SQLite           ( Table, createTable, query, reCreateTable, sjoin,
+                                sqlFmt )
 import Brian.SQLiteError      ( AsSQLiteError, UsageSQLiteFPIOTPError,
                                 throwSQLMiscError )
 
@@ -152,24 +150,13 @@ maybeDumpEntry ∷ ∀ ε ω μ .
                   MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
                  Connection → QueryOpts → DoMock → (Only ℤ) → μ ()
 maybeDumpEntry c q mck (Only eid) = do
-  e ← readEntry c (ID $ fromIntegral eid) mck
+  e ← readEntry c (ID $ fromIntegral eid) (q ⊣ showSQL) mck
   case e of
     𝕹   → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
     𝕵 ē →
       let pre_filt = (q ⊣ gfilt ≡ NoGFilt) ∨ gFilt ē
       in  when (pre_filt ∧ maybe 𝕿 (flip matchFilt ē) (q ⊣ entryFilter)) $
                say ([fmtT|%T\n\n----|] ē)
-
-----------------------------------------
-
-sqlFmt ∷ [𝕋] → [SQLData] → 𝕋
-sqlFmt sql ts =
-  let tdata ∷ 𝕄 SQLData → 𝕋 = \ case
-        𝕹             → ""
-        𝕵 (SQLText t) → quote t
-        𝕵 s           → T.pack $ show s
-      sql_pieces = T.splitOn "?" (T.unlines sql)
-  in ю [ a ⊕ (tdata b) | (a,b) ← zip (sql_pieces) ((𝕵 ⊳ ts) ⊕ repeat 𝕹) ]
 
 --------------------
 

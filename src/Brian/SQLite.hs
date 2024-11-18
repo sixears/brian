@@ -19,6 +19,7 @@ module Brian.SQLite
   , query_
   , reCreateTable
   , sjoin
+  , sqlFmt
   , withinTransaction
   ) where
 
@@ -29,7 +30,7 @@ import Base1T
 import Control.Exception qualified as Exception
 
 import Data.Foldable ( Foldable )
-import Data.List     ( filter )
+import Data.List     ( filter, repeat, zip )
 import Data.Proxy    ( Proxy )
 import GHC.Exts      ( IsString(fromString) )
 
@@ -55,7 +56,7 @@ import Natural ( length )
 import Database.SQLite.Simple qualified as SQLite
 
 import Database.SQLite.Simple ( Connection, FormatError, FromRow, Query(Query),
-                                ResultError, SQLError, ToRow )
+                                ResultError, SQLData(SQLText), SQLError, ToRow )
 
 -- text --------------------------------
 
@@ -64,6 +65,10 @@ import Data.Text qualified as T
 -- text-printer ------------------------
 
 import Text.Printer qualified as P
+
+-- textual-plus ------------------------
+
+import TextualPlus ( quote )
 
 ------------------------------------------------------------
 --                     local imports                      --
@@ -304,5 +309,16 @@ insertTableRows sev p conn rows extra mck =
 
 sjoin ∷ [𝕋] → 𝕋
 sjoin = T.unwords ∘ fmap (T.dropWhile (≡ ' '))
+
+----------------------------------------
+
+sqlFmt ∷ [𝕋] → [SQLData] → 𝕋
+sqlFmt sql ts =
+  let tdata ∷ 𝕄 SQLData → 𝕋 = \ case
+        𝕹             → ""
+        𝕵 (SQLText t) → quote t
+        𝕵 s           → T.pack $ show s
+      sql_pieces = T.splitOn "?" (T.unlines sql)
+  in ю [ a ⊕ (tdata b) | (a,b) ← zip (sql_pieces) ((𝕵 ⊳ ts) ⊕ repeat 𝕹) ]
 
 -- that's all, folks! ----------------------------------------------------------

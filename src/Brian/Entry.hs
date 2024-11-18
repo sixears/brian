@@ -111,6 +111,7 @@ import Brian.Episode     ( Episode, EpisodeID(EpisodeID), EpisodeName, epID,
 import Brian.ID          ( ID(unID), toℤ )
 import Brian.Medium      ( Medium )
 import Brian.Parsers     ( whitespace )
+import Brian.ShowSQL     ( ShowSQL )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
                            ColumnType(CTypeInteger, CTypeText),
                            Table(columns, tName, type RowType),
@@ -321,8 +322,8 @@ readEntry ∷ ∀ ε ω μ .
             (MonadIO μ, Default ω, MonadLog (Log ω) μ,
              AsSQLiteError ε, Printable ε, MonadError ε μ,
              MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
-            Connection → ID → DoMock → μ (𝕄 Entry)
-readEntry conn eid mck = do
+            Connection → ID → ShowSQL → DoMock → μ (𝕄 Entry)
+readEntry conn eid show_sql mck = do
 
   let sql = let actrsss = sjoin
                   [ "SELECT ActressRef.recordid,"
