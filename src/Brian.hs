@@ -97,8 +97,8 @@ import Brian.OptParser        ( OptParser(optParse) )
 import Brian.QueryOpts        ( GFilt(GFilt, NoGFilt), QueryOpts, ageDays,
                                 entryFilter, entryPreFilter, gfilt, showSQL )
 import Brian.ShowSQL          ( ShowSQL(ShowSQL) )
-import Brian.SQLite           ( Table, createTable, query, reCreateTable, sjoin,
-                                sqlFmt )
+import Brian.SQLite           ( Table, createTable, qry, query, reCreateTable,
+                                sjoin, sqlFmt )
 import Brian.SQLiteError      ( AsSQLiteError, UsageSQLiteFPIOTPError,
                                 throwSQLMiscError )
 
@@ -182,7 +182,8 @@ queryEntries c q mck = do
 
   eids ← do
     when (q ⊣ showSQL ≡ ShowSQL) $ say (sqlFmt sql ts)
-    query Informational c (Query $ sjoin sql) ts [] mck
+--    query Informational c 𝕹 (Query $ sjoin sql) ts [] mck
+    query Informational c 𝕹 (qry sql ts) [] mck
   forM_ eids (maybeDumpEntry c q mck)
 
 ----------------------------------------

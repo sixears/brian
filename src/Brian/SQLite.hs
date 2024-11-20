@@ -15,6 +15,7 @@ module Brian.SQLite
   , fold
   , insertTableRows
   , insertTableRows_
+  , qry
   , query
   , query_
   , reCreateTable
@@ -47,6 +48,10 @@ import Control.Monad.Log ( MonadLog, Severity(Debug, Informational) )
 import MockIO.IOClass ( HasIOClass, IOClass(IOWrite) )
 import MockIO.Log     ( DoMock, HasDoMock, mkIOLME, mkIOLMER )
 
+-- monadio-plus ------------------------
+
+import MonadIO ( say )
+
 -- natural -----------------------------
 
 import Natural ( length )
@@ -56,7 +61,8 @@ import Natural ( length )
 import Database.SQLite.Simple qualified as SQLite
 
 import Database.SQLite.Simple ( Connection, FormatError, FromRow, Query(Query),
-                                ResultError, SQLData(SQLText), SQLError, ToRow )
+                                ResultError, SQLData(SQLText), SQLError,
+                                ToRow(toRow) )
 
 -- text --------------------------------
 
@@ -75,6 +81,7 @@ import TextualPlus ( quote )
 ------------------------------------------------------------
 
 import Brian.Exceptions  ( catches )
+import Brian.ShowSQL     ( ShowSQL(NoShowSQL, ShowSQL) )
 import Brian.SQLiteError ( AsSQLiteError, SQuError, toAsSQLiteError )
 
 --------------------------------------------------------------------------------
@@ -94,7 +101,14 @@ newtype ColumnName = ColumnName { unColumnName :: 𝕋 }
 
 instance Printable ColumnName where print = P.text ∘ unColumnName
 
-----------------------------------------
+------------------------------------------------------------
+
+newtype Qry = Qry ([𝕋], [SQLData])
+
+qry ∷ [𝕋] → [SQLData] → Qry
+qry sql datums = Qry (sql,datums)
+
+------------------------------------------------------------
 
 columnID ∷ ColumnName → 𝕋
 columnID = (":"⊕) ∘ unColumnName
@@ -193,21 +207,21 @@ execute_ sev conn sql =
 
 ----------------------------------------
 
-query ∷ ∀ ε ξ χ ω μ .
-        (MonadIO μ, ToRow ξ, FromRow χ, Show ξ,
-         AsSQLiteError ε, Printable ε, MonadError ε μ,
+query ∷ ∀ ε χ ω μ .
+        (MonadIO μ, FromRow χ, AsSQLiteError ε, Printable ε, MonadError ε μ,
          Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
-        Severity → Connection → Query → ξ → [χ] → DoMock → μ [χ]
-query sev conn sql r mock_value =
+        Severity → Connection → 𝕄 ShowSQL → Qry → [χ] → DoMock → μ [χ]
+query sev conn show_sql (Qry (sql, r)) mock_value = do
   let handlers = [ Exception.Handler $ return ∘ toAsSQLiteError @SQLError
                  , Exception.Handler $ return ∘ toAsSQLiteError @FormatError
                  , Exception.Handler $ return ∘ toAsSQLiteError @SQuError
                  , Exception.Handler $ return ∘ toAsSQLiteError @ResultError
                  ]
-      io       = ((SQLite.query conn sql r) `catches` handlers)
+      io       = ((SQLite.query conn (Query $ sjoin sql) r) `catches` handlers)
       sqlqy    = [fmtT|sqlqy %w %w|] sql r
       records  = pure ∘ [fmtT|query returned %d records|] ∘ length
-  in  mkIOLMER sev IOWrite sqlqy (𝕵 $ records) mock_value io
+  -- when (show_sql ≡ 𝕵 ShowSQL) $ say (sqlFmt sql r)
+  mkIOLMER sev IOWrite sqlqy (𝕵 $ records) mock_value io
 
 ----------------------------------------
 
@@ -287,11 +301,12 @@ insertTableRows_ ∷ ∀ ε α β ω μ .
                    Severity → Proxy α → Connection → [RowType α] → 𝕋 → DoMock
                  → μ [(RowType α, [β])]
 insertTableRows_ sev p conn rows extra mck = do
-  let sql = Query $ [fmt|INSERT INTO %T (%L) VALUES (%L)%t%T|] (tName p)
-                    (insertColumns ∘ toList $ columns p)
-                    (const ("?"∷𝕋) ⊳ (insertColumns ∘ toList $ columns p))
-                    (if extra ≡ "" then "" else " ") extra
-  forM rows $ \ row → (row,) ⊳ query sev conn sql row ф mck
+  let sql = [ [fmt|INSERT INTO %T (%L) VALUES (%L)%t%T|] (tName p)
+                   (insertColumns ∘ toList $ columns p)
+                   (const ("?"∷𝕋) ⊳ (insertColumns ∘ toList $ columns p))
+                   (if extra ≡ "" then "" else " ") extra
+            ]
+  forM rows $ \ row → (row,) ⊳ query sev conn 𝕹 (Qry (sql,toRow row)) ф mck
 
 ----------------------------------------
 
