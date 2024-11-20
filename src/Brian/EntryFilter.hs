@@ -153,36 +153,6 @@ instance OptParser EntryFilter where
   optParse = argument readM
                       (metavar "PREDICATE" ⊕ help "entry filter")
 
-{-
-instance OptParser EntryFilter where
-  optParse = EntryFilter ⊳ many (option readM (ю [ long "title"
-                                                 , short 't'
-                                                 , help "title match PCRE"
-                                                 ]))
-                         ⊵ many (strOption (ю [ long "title-filter"
-                                                 , short 'T'
-                                                 , help "title LIKE filter"
-                                                 ]))
-                         ⊵ many (option readM (ю [ long "actress"
-                                                 , short 'a'
-                                                 , help "actress match PCRE"
-                                                 ]))
-                         ⊵ many (option readM (ю [ long "description"
-                                                 , short 'd'
-                                                 , help "description match PCRE"
-                                                 ]))
-                         ⊵ many (option readM (ю [ long "epname"
-                                                 , long "episode-name"
-                                                 , short 'e'
-                                                 , help "episode name PCRE"
-                                                 ]))
-                         ⊵ many (option readM (ю [ long "epid"
-                                                 , long "episode-id"
-                                                 , short 'p'
-                                                 , help "episode ID"
-                                                 ]))
--}
-
 ------------------------------------------------------------
 
 {- | Take a parsec for an α, and function of the form `α → Either Printable β`,

@@ -18,7 +18,7 @@ import Control.Applicative ( optional )
 -- optparse-applicative ----------------
 
 import Options.Applicative ( Parser, auto, flag, help, long, metavar, option,
-                             short, value )
+                             short, str, value )
 
 -- optparse-plus -----------------------
 
@@ -28,7 +28,8 @@ import OptParsePlus ( readM )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.DBEntryPreFilter ( DBEntryPreFilter, null )
+import Brian.DBEntryPreFilter ( DBEntryPreFilter, actressFilter, conj,
+                                descFilter, null, titleFilter )
 import Brian.EntryFilter      ( EntryFilter )
 import Brian.OptParser        ( OptParser(optParse) )
 import Brian.ShowSQL          ( ShowSQL(NoShowSQL, ShowSQL) )
@@ -44,6 +45,9 @@ data QueryOpts = QueryOpts { _entryFilter    :: 𝕄 EntryFilter
                            , _ageDays        :: 𝕄 ℕ
                            , _showSQL        :: ShowSQL
                            , _gfilt          :: GFilt
+                           , _titlePreFilt   :: 𝕄 𝕋
+                           , _actressPreFilt :: 𝕄 𝕋
+                           , _descPreFilt    :: 𝕄 𝕋
                            }
 
 --------------------
@@ -62,11 +66,26 @@ instance OptParser QueryOpts where
                                                       , help "show sql"])
                  g_filt   = flag GFilt     NoGFilt (ю [ long "no-g-filt"
                                                       , help "no g filter"])
+                 help_T   =
+                   help "prefilt title match (inserts % unless % present)"
+                 filt_T   = optional $ option str $
+                   ю [ short 'T', help_T, metavar "TITLE" ]
+                 help_A   =
+                   help "prefilt actress match (inserts % unless % present)"
+                 filt_A   = optional $ option str $
+                   ю [ short 'A', help_A, metavar "ACTRESS" ]
+                 help_D   =
+                   help "prefilt description match (inserts % unless % present)"
+                 filt_D   = optional $ option str $
+                   ю [ short 'D', help_D, metavar "DESCRIPTION" ]
              in  QueryOpts ⊳ optional optParse
                            ⊵ prefilt_m
                            ⊵ query_pars_m
                            ⊵ show_sql
                            ⊵ g_filt
+                           ⊵ filt_T
+                           ⊵ filt_A
+                           ⊵ filt_D
 
 ----------------------------------------
 
@@ -75,8 +94,12 @@ entryFilter = lens _entryFilter (\ q f → q { _entryFilter = f })
 
 ----------------------------------------
 
-entryPreFilter ∷ Lens' QueryOpts DBEntryPreFilter
-entryPreFilter = lens _entryPreFilter (\ q f → q { _entryPreFilter = f })
+entryPreFilter ∷ QueryOpts → DBEntryPreFilter
+entryPreFilter q =
+  foldr conj (_entryPreFilter q) [ maybe null titleFilter   (_titlePreFilt q)
+                                 , maybe null actressFilter (_actressPreFilt q)
+                                 , maybe null descFilter    (_descPreFilt q)
+                                 ]
 
 ----------------------------------------
 

@@ -74,20 +74,7 @@ optionsParser =
       entry_date = option OptParsePlus.readM (ю [ long "entry-date"
                                                 , short 'd',help "entry-date" ])
       query_desc = progDesc "query the database"
-      query_info = {- let prefilt_h  = help "entry DB pre-filter"
-                       prefilt_m  ∷ Parser DBEntryPreFilter
-                       prefilt_m  =
-                         option readM $ ю [ short 'b', prefilt_h, value null
-                                          , metavar "PREDICATE" ]
-                       query_pars =
-                         let hlp = "look back n days' entries"
-                         in  option auto (ю [ short 'y', long "days", help hlp])
-                       query_pars_m = optional query_pars
-                       show_sql = flag NoShowSQL ShowSQL (ю [ long "show-sql"
-                                                            , help "show sql"])
-                   in  -} info (ModeQuery ⊳ {- optional optParse
-                                       ⊵ prefilt_m ⊵ query_pars_m ⊵ show_sql -} optParse)
-                            query_desc
+      query_info = info (ModeQuery ⊳ optParse) query_desc
       mode_commands ∷ [Mod CommandFields Mode] =
         [ command "create"
                   (info (ModeCreate ⊳ optional input_file
@@ -107,7 +94,8 @@ optionsParser =
   in  Options ⊳ subparser (ю mode_commands)
               ⊵ argument FPath.Parseable.readM (metavar "SQLITE-DB")
 
-instance (AsSQLiteError ε, AsTextualParseError ε, Printable ε) ⇒ OptParser (Options ε) where
+instance (AsSQLiteError ε, AsTextualParseError ε, Printable ε) ⇒
+         OptParser (Options ε) where
   optParse = optionsParser
 
 -- that's all, folks! ----------------------------------------------------------

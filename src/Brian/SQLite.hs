@@ -61,8 +61,8 @@ import Natural ( length )
 import Database.SQLite.Simple qualified as SQLite
 
 import Database.SQLite.Simple ( Connection, FormatError, FromRow, Query(Query),
-                                ResultError, SQLData(SQLText), SQLError,
-                                ToRow(toRow) )
+                                ResultError, SQLData(SQLInteger, SQLText),
+                                SQLError, ToRow(toRow) )
 
 -- text --------------------------------
 
@@ -81,7 +81,7 @@ import TextualPlus ( quote )
 ------------------------------------------------------------
 
 import Brian.Exceptions  ( catches )
-import Brian.ShowSQL     ( ShowSQL(NoShowSQL, ShowSQL) )
+import Brian.ShowSQL     ( ShowSQL(ShowSQL) )
 import Brian.SQLiteError ( AsSQLiteError, SQuError, toAsSQLiteError )
 
 --------------------------------------------------------------------------------
@@ -211,7 +211,7 @@ query ∷ ∀ ε χ ω μ .
         (MonadIO μ, FromRow χ, AsSQLiteError ε, Printable ε, MonadError ε μ,
          Default ω, HasIOClass ω, HasDoMock ω, MonadLog (Log ω) μ) ⇒
         Severity → Connection → 𝕄 ShowSQL → Qry → [χ] → DoMock → μ [χ]
-query sev conn show_sql (Qry (sql, r)) mock_value = do
+query sev conn show_sql (Qry (sql, r)) mock_value do_mock = do
   let handlers = [ Exception.Handler $ return ∘ toAsSQLiteError @SQLError
                  , Exception.Handler $ return ∘ toAsSQLiteError @FormatError
                  , Exception.Handler $ return ∘ toAsSQLiteError @SQuError
@@ -220,8 +220,8 @@ query sev conn show_sql (Qry (sql, r)) mock_value = do
       io       = ((SQLite.query conn (Query $ sjoin sql) r) `catches` handlers)
       sqlqy    = [fmtT|sqlqy %w %w|] sql r
       records  = pure ∘ [fmtT|query returned %d records|] ∘ length
-  -- when (show_sql ≡ 𝕵 ShowSQL) $ say (sqlFmt sql r)
-  mkIOLMER sev IOWrite sqlqy (𝕵 $ records) mock_value io
+  when (show_sql ≡ 𝕵 ShowSQL) $ say (sqlFmt sql r) ⪼ say ("----\n"∷𝕋)
+  mkIOLMER sev IOWrite sqlqy (𝕵 $ records) mock_value io do_mock
 
 ----------------------------------------
 
@@ -330,9 +330,10 @@ sjoin = T.unwords ∘ fmap (T.dropWhile (≡ ' '))
 sqlFmt ∷ [𝕋] → [SQLData] → 𝕋
 sqlFmt sql ts =
   let tdata ∷ 𝕄 SQLData → 𝕋 = \ case
-        𝕹             → ""
-        𝕵 (SQLText t) → quote t
-        𝕵 s           → T.pack $ show s
+        𝕹                → ""
+        𝕵 (SQLText    t) → quote t
+        𝕵 (SQLInteger i) → toText i
+        𝕵 s              → T.pack $ show s
       sql_pieces = T.splitOn "?" (T.unlines sql)
   in ю [ a ⊕ (tdata b) | (a,b) ← zip (sql_pieces) ((𝕵 ⊳ ts) ⊕ repeat 𝕹) ]
 

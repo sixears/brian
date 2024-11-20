@@ -51,8 +51,7 @@ import Control.Exception.Safe ( finally )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple ( Connection, Only(Only), Query(Query), close,
-                                open )
+import Database.SQLite.Simple ( Connection, Only(Only), close, open )
 
 -- stdmain --------------------------------
 
@@ -96,9 +95,7 @@ import Brian.Options          ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreat
 import Brian.OptParser        ( OptParser(optParse) )
 import Brian.QueryOpts        ( GFilt(GFilt, NoGFilt), QueryOpts, ageDays,
                                 entryFilter, entryPreFilter, gfilt, showSQL )
-import Brian.ShowSQL          ( ShowSQL(ShowSQL) )
-import Brian.SQLite           ( Table, createTable, qry, query, reCreateTable,
-                                sjoin, sqlFmt )
+import Brian.SQLite           ( Table, createTable, qry, query, reCreateTable )
 import Brian.SQLiteError      ( AsSQLiteError, UsageSQLiteFPIOTPError,
                                 throwSQLMiscError )
 
@@ -176,14 +173,11 @@ queryEntries c q mck = do
                               GFilt   → DBEntryPreFilter.gFilt
                               NoGFilt → DBEntryPreFilter.null
                    d_filt = maybe null dateFilter (q ⊣ ageDays)
-               in  conj g_filt (conj (q ⊣ entryPreFilter) d_filt)
+               in  conj g_filt (conj (entryPreFilter q) d_filt)
   (like_clauses,ts) ← whereClause filter
   let sql = sel ⊕ (("       AND " ⊕) ⊳ [like_clauses])
 
-  eids ← do
-    when (q ⊣ showSQL ≡ ShowSQL) $ say (sqlFmt sql ts)
---    query Informational c 𝕹 (Query $ sjoin sql) ts [] mck
-    query Informational c 𝕹 (qry sql ts) [] mck
+  eids ← query Informational c (𝕵 $ q ⊣ showSQL) (qry sql ts) [] mck
   forM_ eids (maybeDumpEntry c q mck)
 
 ----------------------------------------

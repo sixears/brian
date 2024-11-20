@@ -1,12 +1,15 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.DBEntryPreFilter
   ( DBEntryPreFilter
-  , DBEntryPreFilterItem(DBEntryEntryDateFilter)
+  , DBEntryPreFilterItem(DBEntryEntryDateFilter, DBEntryTitleFilter)
+  , actressFilter
   , conj
   , dateFilter
+  , descFilter
   , gFilt
   , null
   , tests
+  , titleFilter
   , whereClause
   ) where
 
@@ -115,8 +118,13 @@ dateNDaysAgo d = do
 itemWhereClause ∷ MonadIO μ ⇒ DBEntryPreFilterItem → μ (𝕋,[SQLData])
 itemWhereClause DBEntryNullFilter          = return ("TRUE", [])
 itemWhereClause (DBEntryTitleFilter t)     = return ("title LIKE ?"  ,toRow [t])
+itemWhereClause (DBEntryMediumFilter t)    = return ("medium LIKE ?", toRow [t])
 itemWhereClause (DBEntryTagFilter g)       = return ("tag LIKE ?"    ,toRow [g])
 itemWhereClause (DBEntryActressFilter a)   = return ("actress LIKE ?",toRow [a])
+itemWhereClause (DBEntryEpNameFilter a)    =
+  return ("episodename LIKE ?",toRow [a])
+itemWhereClause (DBEntryEpIDFilter a)    =
+  return ("episodeid LIKE ?",toRow [a])
 itemWhereClause (DBEntryDescFilter t)      =
   return ("description LIKE ?",toRow [t])
 itemWhereClause (DBEntryEntryDateFilter d) = do
@@ -148,13 +156,21 @@ filterNot = DBPreF ∘ EF_NotPred
 
 ----------------------------------------
 
+-- if a string has no %, then break on words, and put % between each word and
+-- before and after
+mglob ∷ 𝕋 → 𝕋
+mglob t =
+  if "%" `T.isInfixOf` t then t else "%" ⊕ T.intercalate "%" (T.words t) ⊕ "%"
+
+----------------------------------------
+
 dateFilter ∷ ℕ → DBEntryPreFilter
 dateFilter = filter ∘ DBEntryEntryDateFilter
 
 ----------------------------------------
 
 descFilter ∷ 𝕋 → DBEntryPreFilter
-descFilter = filter ∘ DBEntryDescFilter
+descFilter = filter ∘ DBEntryDescFilter ∘ mglob
 
 ----------------------------------------
 
@@ -165,6 +181,16 @@ tagFilter = filter ∘ DBEntryTagFilter
 
 tagNotFilter ∷ 𝕋 → DBEntryPreFilter
 tagNotFilter = filterNot ∘ DBEntryTagFilter
+
+----------------------------------------
+
+titleFilter ∷ 𝕋 → DBEntryPreFilter
+titleFilter = filter ∘ DBEntryTitleFilter ∘ mglob
+
+----------------------------------------
+
+actressFilter ∷ 𝕋 → DBEntryPreFilter
+actressFilter = filter ∘ DBEntryActressFilter ∘ mglob
 
 ----------------------------------------
 

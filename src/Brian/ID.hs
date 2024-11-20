@@ -16,6 +16,7 @@ import Text.Read ( Read(readPrec) )
 
 -- sqlite-simple -----------------------
 
+import Database.SQLite.Simple           ( SQLData(SQLInteger) )
 import Database.SQLite.Simple.FromField ( FromField(fromField) )
 import Database.SQLite.Simple.Ok        ( Ok(Errors, Ok) )
 import Database.SQLite.Simple.ToField   ( ToField(toField) )
@@ -29,6 +30,7 @@ import TextualPlus ( TextualPlus(textual') )
 ------------------------------------------------------------
 
 import Brian.NumberParsing ( denary )
+import Brian.ToSQLData     ( ToSQLData(toSQLData) )
 
 --------------------------------------------------------------------------------
 
@@ -54,5 +56,8 @@ instance FromField ID where
   fromField f = case fromField @ℤ f of
                   Ok n     → Ok $ fromℤ n
                   Errors x → Errors x
+
+instance ToSQLData ID where
+  toSQLData = SQLInteger ∘ fromIntegral ∘ toℤ
 
 -- that's all, folks! ----------------------------------------------------------

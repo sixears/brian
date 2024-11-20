@@ -70,6 +70,7 @@ library
                      , Brian.SQLiteError
                      , Brian.TagSoup
                      , Brian.Title
+                     , Brian.ToSQLData
 
   default-extensions: DeriveAnyClass
                     , DeriveGeneric

@@ -48,10 +48,6 @@ import Log ( Log )
 import MockIO.IOClass ( HasIOClass )
 import MockIO.Log     ( DoMock(NoMock), HasDoMock, logio )
 
--- monadio-plus ------------------------
-
-import MonadIO ( say )
-
 -- natural -----------------------------
 
 import Natural ( length )
@@ -63,8 +59,7 @@ import Text.Parser.Combinators ( eof, sepBy, (<?>) )
 
 -- sqlite-simple -----------------------
 
-import Database.SQLite.Simple         ( Connection, Only(Only), Query(Query),
-                                        SQLData(SQLInteger), ToRow(toRow) )
+import Database.SQLite.Simple         ( Connection, Only(Only), ToRow(toRow) )
 import Database.SQLite.Simple.ToField ( ToField(toField) )
 
 -- tagsoup -----------------------------
@@ -115,15 +110,15 @@ import Brian.Episode     ( Episode, EpisodeID(EpisodeID), EpisodeName, epID,
 import Brian.ID          ( ID(unID), toℤ )
 import Brian.Medium      ( Medium )
 import Brian.Parsers     ( whitespace )
-import Brian.ShowSQL     ( ShowSQL(ShowSQL) )
+import Brian.ShowSQL     ( ShowSQL )
 import Brian.SQLite      ( ColumnDesc(ColumnDesc), ColumnFlag(PrimaryKey),
                            ColumnType(CTypeInteger, CTypeText),
                            Table(columns, tName, type RowType),
-                           insertTableRows_, qry, query, sjoin, sqlFmt,
-                           withinTransaction )
+                           insertTableRows_, qry, query, withinTransaction )
 import Brian.SQLiteError ( AsSQLiteError, throwSQLMiscError )
 import Brian.TagSoup     ( text, (≈), (≉) )
 import Brian.Title       ( Title, unTitle )
+import Brian.ToSQLData   ( ToSQLData(toSQLData) )
 
 --------------------------------------------------------------------------------
 
@@ -330,27 +325,31 @@ readEntry ∷ ∀ ε ω μ .
             Connection → ID → ShowSQL → DoMock → μ (𝕄 Entry)
 readEntry conn eid show_sql mck = do
 
-  let sql = let actrsss ∷ [𝕋] = -- sjoin
-                  [ "SELECT ActressRef.recordid,"
-                  , "       GROUP_CONCAT(Actress.actress, ', ') as actresses"
+  let sql = let actrsss ∷ NonEmpty 𝕋 =
+                  "SELECT ActressRef.recordid," :|
+                  [ "       GROUP_CONCAT(Actress.actress, ', ') AS actresses"
                   , "  FROM ActressRef, Actress"
                   , " WHERE ActressRef.actressid = Actress.id"
                   , " GROUP BY ActressRef.recordid"
                   ]
-                tgss ∷ [𝕋] = -- sjoin
-                  [ "SELECT TagRef.recordid,"
-                  , "       GROUP_CONCAT(Tag.tag, ', ') as tags"
+                tgss ∷ NonEmpty 𝕋 =
+                  "SELECT TagRef.recordid," :|
+                  [ "       GROUP_CONCAT(Tag.tag, ', ') AS tags"
                   , "  FROM TagRef,Tag"
                   , " WHERE TagRef.tagid = Tag.id"
                   , " GROUP BY TagRef.recordid"
                   ]
-                left_joins = [ (T.unlines actrsss, "Actresses", ("recordid", "Entry.id"))
-                             , (T.unlines tgss, "Tags", ("recordid", "Entry.id"))
+                left_joins = [ (actrsss, "Actresses", ("recordid", "Entry.id"))
+                             , (tgss, "Tags", ("recordid", "Entry.id"))
                              ]
                 joinsql =
-                  [ [fmt|LEFT JOIN (%t) AS %t ON %t.%t = %t|]
-                      expr tab_as tab_as lhs rhs
-                    | (expr, tab_as, (lhs,rhs)) ← left_joins ]
+                  ю [ ([fmtT|LEFT JOIN (%t|] e)
+                      : (("           " ⊕) ⊳ expr) ⊕
+                      [ "          )"
+                      , [fmt|as %t|] tab_as
+                      , [fmt|on %t.%t = %t|] tab_as lhs rhs
+                      ]
+                      | ((e:|expr), tab_as, (lhs,rhs)) ← left_joins ]
                 tables ∷ [𝕋] = [ "Entry" ]
                 fields ∷ [𝕋] = [ "title", "medium", "description", "episodeid"
                                , "episodename", "entrydate"
@@ -359,14 +358,11 @@ readEntry conn eid show_sql mck = do
                 wheres ∷ [𝕋] = [ "Entry.id = ?"
                                , "Actresses.recordid = Entry.id"
                                ]
-                sqlt = [fmt|SELECT %L FROM %L %t WHERE %t|]
-                            fields tables (T.unwords joinsql)
-                            (T.intercalate " AND " wheres)
-            in  {- do when (show_sql ≡ ShowSQL) (say $ sqlFmt sql [eid]) -}
-                   {- Query -} {- $ [fmt|SELECT %L FROM %L %t WHERE %t|]
-                        fields tables (T.unwords joinsql)
-                        (T.intercalate " AND " wheres) -} [sqlt]
-  query Informational conn 𝕹 (qry sql [SQLInteger ∘ fromIntegral $ toℤ eid]) [] mck ≫ \ case
+            in  [ [fmt|SELECT %L|] fields
+                , [fmt|  FROM %L|] tables
+                  ] ⊕ (("       " ⊕) ⊳ joinsql) ⊕ [
+                 [fmt| WHERE %t|] (T.intercalate " AND " wheres) ]
+  query Informational conn (𝕵 show_sql) (qry sql [toSQLData eid]) [] mck ≫ \ case
     []                    → return 𝕹
 
     row@[(ttle,mdm,desc,epid,epname,edate,actrsss∷𝕋,tagss ∷ 𝕄 𝕋)] → do
