@@ -8,7 +8,10 @@ module Brian.DBEntryPreFilter
   , descFilter
   , gFilt
   , null
+  , parseSpecDescs
   , tests
+  , textualHelpDoc
+  , textualHelpMods
   , titleFilter
   , whereClause
   ) where
@@ -18,8 +21,13 @@ import Prelude ( (*) )
 
 -- base --------------------------------
 
+import Data.Char          ( toUpper )
 import Data.List.NonEmpty ( unzip )
 import Text.Read          ( read )
+
+-- optparse-applicative ----------------
+
+import Options.Applicative ( HasMetavar, Mod, helpDoc, metavar )
 
 -- optparse-plus -----------------------
 
@@ -27,11 +35,15 @@ import OptParsePlus ( OptReader(readM) )
 
 -- parsers -----------------------------
 
-import Text.Parser.Char ( char, digit )
+import Text.Parser.Char ( CharParsing, char, digit )
 
 -- parser-plus -------------------------
 
 import ParserPlus ( boundedDoubledChars, parens )
+
+-- prettyprinter -----------------------
+
+import Prettyprinter ( Doc, align, hsep, indent, pretty, vsep )
 
 -- sqlite-simple -----------------------
 
@@ -50,6 +62,10 @@ import TextualPlus ( TextualPlus(textual'), parenthesize, surround )
 import Data.Time.Calendar       ( addDays )
 import Data.Time.Clock          ( getCurrentTime, utctDay )
 import Data.Time.Format.ISO8601 ( iso8601Show )
+
+-- trifecta ----------------------------
+
+import Text.Trifecta ( Parser )
 
 -- trifecta-plus -----------------------
 
@@ -79,27 +95,47 @@ data DBEntryPreFilterItem = DBEntryTitleFilter 𝕋
 
 --------------------
 
-instance TextualPlus DBEntryPreFilterItem where
-  textual' =
-    let braced        = T.pack ⊳ boundedDoubledChars '{' '}'
-        bracedGlobbed = surround "%" ⊳ braced
-    in    char 't' ⋫ (DBEntryTitleFilter ⊳ bracedGlobbed)
-        ∤ char 'T' ⋫ (DBEntryTitleFilter ⊳ braced)
-        ∤ char 'a' ⋫ (DBEntryActressFilter ⊳ bracedGlobbed)
-        ∤ char 'A' ⋫ (DBEntryActressFilter ⊳ braced)
-        ∤ char 'd' ⋫ (DBEntryDescFilter ⊳ bracedGlobbed)
-        ∤ char 'D' ⋫ (DBEntryDescFilter ⊳ braced)
-        ∤ char 'm' ⋫ (DBEntryMediumFilter ⊳ bracedGlobbed)
-        ∤ char 'M' ⋫ (DBEntryMediumFilter ⊳ braced)
-        ∤ char 'e' ⋫ (DBEntryEpNameFilter ⊳ bracedGlobbed)
-        ∤ char 'E' ⋫ (DBEntryEpNameFilter ⊳ braced)
-        ∤ char 'i' ⋫ (DBEntryEpIDFilter ⊳ bracedGlobbed)
-        ∤ char 'I' ⋫ (DBEntryEpIDFilter ⊳ braced)
-        ∤ char 'y' ⋫ (DBEntryEntryDateFilter ⊳ parens (read ⊳ some digit))
-        ∤ char 'g' ⋫ (DBEntryTagFilter ⊳ bracedGlobbed)
-        ∤ char 'G' ⋫ (DBEntryTagFilter ⊳ braced)
+parseSpecs ∷ CharParsing η ⇒ [(ℂ, 𝕋 → DBEntryPreFilterItem, η 𝕋, 𝕋, 𝕋)]
+parseSpecs = let braced            = T.pack ⊳ boundedDoubledChars '{' '}'
+                 text      (c,p,t) = (c, p, braced,
+                                      [fmt|%s{..}|] [c], t ⊕ "; pass to LIKE")
+                 text_glob (c,p,t) =
+                   let expl = T.unwords [ "split into words, surround with"
+                                        , "'%' to pass to LIKE" ]
+                   in (c, p,
+                       surround "%" ⊳ (T.intercalate "%" ∘ T.words ⊳ braced),
+                       [fmt|%s{..}|] [c], [fmt|%t; %t|] t expl)
+                 texts     c p t = [ text (toUpper c,p,t), text_glob (c,p,t) ]
+                 nat       c p t = (c, p, parens (T.pack ⊳ some digit),
+                                     [fmt|%s(..)|] [c], t)
+             in ю [ texts 'a' DBEntryActressFilter "filter on actress"
+                  , texts 'd' DBEntryDescFilter "filter on description"
+                  , texts 'e' DBEntryEpNameFilter "filter on episode name"
+                  , texts 'g' DBEntryTagFilter "filter on tag"
+                  , texts 'i' DBEntryEpIDFilter "filter on Episode ID"
+                  , texts 'm' DBEntryMediumFilter "filter on medium"
+                  , texts 't' DBEntryTitleFilter "filter on title"
+                  , [ nat 'y' (DBEntryEntryDateFilter ∘ read ∘ T.unpack)
+                          "only show entries from later than n days ago" ]
+                  ]
 
--- medium,description,episodeid,episodename
+parseSpecDescs ∷ [(Doc α,Doc α)]
+parseSpecDescs =
+--  [ (pretty x) ⊕ (indent 4 $ pretty t) | (_,_,_,x,t) ← parseSpecs @Parser]
+  [ (pretty x, indent 4 $ pretty t) | (_,_,_,x,t) ← parseSpecs @Parser]
+
+
+instance TextualPlus DBEntryPreFilterItem where
+  textual' = foldr1 (∤) [ char c ⋫ (x ⊳ p) | (c,x,p,_,_) ← parseSpecs ]
+
+textualHelpDoc ∷ Doc α
+textualHelpDoc =
+  let columns = vsep [ c ⊕ (indent 4 t) | (c,t) ← parseSpecDescs ]
+  in  vsep [ hsep [ "entry DB pre-filter:", PredicateFilter.textualHelpDoc ]
+           , indent 2 ∘ align $ columns ]
+
+textualHelpMods ∷ HasMetavar ψ ⇒ Mod ψ α
+textualHelpMods = metavar "PREDICATE" ⊕ helpDoc (𝕵 textualHelpDoc)
 
 --------------------
 

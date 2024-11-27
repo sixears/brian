@@ -23,7 +23,7 @@ import Control.Lens.Getter ( view )
 
 -- options-applicative -----------------
 
-import Options.Applicative ( argument, eitherReader, help, metavar )
+import Options.Applicative ( argument, eitherReader, helpDoc, metavar )
 
 -- optparse-plus -----------------------
 
@@ -43,6 +43,10 @@ import ParserPlus ( boundedDoubledChars, parens )
 import PCRE       ( PCRE, compRE, (?=~) )
 import PCRE.Base  ( pcre, reSource )
 import PCRE.Error ( REParseError )
+
+-- prettyprinter -----------------------
+
+import Prettyprinter ( Doc, align, hsep, indent, pretty, vsep )
 
 -- regex -------------------------------
 
@@ -68,6 +72,10 @@ import Text.Printer qualified as P
 
 import TextualPlus ( TextualPlus(textual'), parseTextual )
 
+-- trifecta ----------------------------
+
+import Text.Trifecta ( Parser )
+
 -- trifecta-plus -----------------------
 
 import TrifectaPlus ( testParse )
@@ -76,7 +84,8 @@ import TrifectaPlus ( testParse )
 --                     local imports                      --
 ------------------------------------------------------------
 
-import Brian.EntryData qualified as EntryData
+import Brian.EntryData       qualified as EntryData
+import Brian.PredicateFilter qualified as PredicateFilter
 
 import Brian.BTag            ( unBTags )
 import Brian.Description     ( Description )
@@ -149,9 +158,15 @@ type EntryFilter = PredicateFilter ShowableEntryFilter
 
 ----------------------------------------
 
+-- instance OptReader EntryFilter where
+--  readM = PredicateFilter.readM
+
 instance OptParser EntryFilter where
-  optParse = argument readM
-                      (metavar "PREDICATE" ⊕ help "entry filter")
+  optParse = let help_doc = helpDoc ∘ 𝕵 $ textualHelpDoc
+-- NEED TO PREFIX WITH ENTRY; MOVE THIS TO QUERYOPTS?  MAYBE, MAYBE NOT
+
+--                   vsep [ "entry filter x", indent 2 ∘ align $ vsep [ c ⊕ (indent 4 t) | (c,t) ← parseSpecDescs ] ]
+             in  argument readM (metavar "PREDICATE" ⊕ help_doc)
 
 ------------------------------------------------------------
 
@@ -207,15 +222,33 @@ sef_epname_pcre re   =
 
 ----------------------------------------
 
+data ParseType = ParseEPID | ParseRE
+
+parseSpecs ∷ (CharParsing η, MonadFail η) ⇒
+             [(ℂ, η ShowableEntryFilter, ParseType, 𝕋, 𝕋)]
+parseSpecs =
+  let parse_re   c p t =
+        (c, p ⊳ parseRE  , ParseRE  , c `T.cons` "{..}", t ⊕ " PCRE")
+      parse_epid c p t =
+        (c, p ⊳ parseEPID, ParseEPID, c `T.cons` "(..)", t ⊕ " (m.n..)")
+  in  [ parse_epid 'p' sef_epid_match "filter Episode ID (m.n..)"
+      , parse_re 't' sef_title_pcre "filter Title"
+      , parse_re 'a' sef_actress_pcre "filter Actress"
+      , parse_re 'e' sef_epname_pcre "filter Episode Name"
+      ]
+
+parseSpecDescs ∷ [(Doc α,Doc α)]
+parseSpecDescs =
+  [ (pretty x, pretty t) | (_,_,_,x,t) ← parseSpecs @Parser]
+
 instance TextualPlus ShowableEntryFilter where
-  textual' = char 'p' ⋫ (sef_epid_match ⊳ parseEPID)
-             -- The TextualPlus instance of PCRE allows for double-quoting.
-             -- I guess that was a mistake; but anyway, we cannot easily use it
-             -- here directly without adding complication to the parsing (for
-             -- users)
-           ∤ char 't' ⋫ (sef_title_pcre ⊳ parseRE)
-           ∤ char 'a' ⋫ (sef_actress_pcre ⊳ parseRE)
-           ∤ char 'e' ⋫ (sef_epname_pcre ⊳ parseRE)
+  textual' = foldr1 (∤) [ char c ⋫ p | (c,p,_,_,_) ← parseSpecs ]
+
+textualHelpDoc ∷ Doc α
+textualHelpDoc =
+  let columns = vsep [ c ⊕ (indent 4 t) | (c,t) ← parseSpecDescs ]
+  in  vsep [ hsep [ "entry filter:", PredicateFilter.textualHelpDoc ]
+           , indent 2 ∘ align $ columns ]
 
 -- tests -----------------------------------------------------------------------
 

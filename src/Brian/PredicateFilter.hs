@@ -5,6 +5,7 @@ module Brian.PredicateFilter
   , conj
   , disj
   , matchFilt
+  , textualHelpDoc
   ) where
 
 import Base1T hiding ( toList )
@@ -32,6 +33,10 @@ import Text.Parser.Combinators ( sepByNonEmpty, try )
 -- parser-plus -------------------------
 
 import ParserPlus ( brackets, whitespaces )
+
+-- prettyprinter -----------------------
+
+import Prettyprinter ( Doc, hsep )
 
 -- regex-with-pcre ---------------------
 
@@ -91,7 +96,7 @@ parseFilts ∷ ∀ α μ . (MonadFail μ, CharParsing μ, TextualPlus α) ⇒
 parseFilts =
   let whitespaced p = whitespaces ⋫ p ⋪ whitespaces
       separator     = whitespaced $ char ','
-  in  brackets (whitespaced (textual' `sepByNonEmpty` try (separator)))
+  in  brackets (whitespaced (textual' `sepByNonEmpty` try separator))
 
 ----------------------------------------
 
@@ -101,6 +106,12 @@ instance TextualPlus α ⇒ TextualPlus (PredicateFilter α) where
            ∤ ((string "⋁" ∤ string "OR") ⋪ whitespaces) ⋫
                 (EF_Disj ⊳ (whitespaces ⋫ parseFilts))
            ∤ EF_Pred ⊳ textual'
+
+textualHelpDoc ∷ Doc α
+textualHelpDoc = hsep [ "specify a predicate, using any of the below, possibly"
+                      , "recursively combined with AND[..,..]/⋀[..,..] //"
+                      , "OR[..,..]/⋁[..,..]"
+                      ]
 
 ----------------------------------------
 
