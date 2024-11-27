@@ -152,7 +152,7 @@ maybeDumpEntry c q mck (Only eid) = do
     𝕹   → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
     𝕵 ē →
       let pre_filt = (q ⊣ gfilt ≡ NoGFilt) ∨ gFilt ē
-      in  when (pre_filt ∧ maybe 𝕿 (flip matchFilt ē) (q ⊣ entryFilter)) $
+      in  when (pre_filt ∧ matchFilt (q ⊣ entryFilter) ē) $
                say ([fmtT|%T\n\n----|] ē)
 
 --------------------

@@ -254,15 +254,15 @@ gFilt =
 
 conj ∷ DBEntryPreFilter → DBEntryPreFilter → DBEntryPreFilter
 conj (DBPreF f) (DBPreF f') = DBPreF (PredicateFilter.conj f f')
-conj (DBPreNull) d          = d
-conj d (DBPreNull)          = d
+conj DBPreNull d            = d
+conj d DBPreNull            = d
 
 ----------------------------------------
 
 disj ∷ DBEntryPreFilter → DBEntryPreFilter → DBEntryPreFilter
 disj (DBPreF f) (DBPreF f') = DBPreF (PredicateFilter.disj f f')
-disj (DBPreNull) d          = d
-disj d (DBPreNull)          = d
+disj DBPreNull d            = d
+disj d DBPreNull            = d
 
 -- tests -----------------------------------------------------------------------
 
