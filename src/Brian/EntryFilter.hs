@@ -19,7 +19,7 @@ import Text.Read          ( read )
 
 -- lens --------------------------------
 
-import Control.Lens.Getter ( view )
+import Control.Lens.Getter ( Getting, view )
 
 -- options-applicative -----------------
 
@@ -89,8 +89,8 @@ import Brian.PredicateFilter qualified as PredicateFilter
 
 import Brian.BTag            ( unBTags )
 import Brian.Description     ( Description )
-import Brian.Entry           ( Entry, actresses, description, episode, tags,
-                               title )
+import Brian.Entry           ( Entry, actresses, description, episode, medium,
+                               tags, title )
 import Brian.Episode         ( EpisodeID(unEpisodeID), epID, epName )
 import Brian.OptParser       ( OptMkParser(optMkParse) )
 import Brian.PredicateFilter ( PredicateFilter(EF_Conj, EF_Disj, EF_Pred),
@@ -159,14 +159,7 @@ data EntryFilter = EFSome (PredicateFilter ShowableEntryFilter)
 
 ----------------------------------------
 
--- instance OptReader EntryFilter where
---  readM = PredicateFilter.readM
-
 instance OptMkParser EntryFilter where
-{-
-  optParse = let help_doc = helpDoc ∘ 𝕵 $ textualHelpDoc
-             in  argument (EFSome ⊳ readM) (metavar "PREDICATE" ⊕ help_doc ⊕ value null)
--}
   optMkParse f m = let help_doc = helpDoc ∘ 𝕵 $ textualHelpDoc
                    in  f (EFSome ⊳ readM) (ю [ metavar "PREDICATE", help_doc
                                              , value null, m ])
@@ -214,18 +207,29 @@ parseEPID = parens textual'
 
 ----------------------------------------
 
-sef_title_pcre ∷ PCRE → ShowableEntryFilter
-sef_title_pcre re   =
-  ShowableEntryFilter ([fmt|title PCRE: %s|] (reSource re))
-                      (\ e → matched $ toText(e ⊣ title) ?=~ re)
+sef_simple ∷ Printable α ⇒ 𝕊 → Getting α Entry α → PCRE → ShowableEntryFilter
+sef_simple name f re =
+  ShowableEntryFilter ([fmt|%s PCRE: %s|] name (reSource re))
+                      (\ e → matched $ toText(e ⊣ f) ?=~ re)
+
+----------------------------------------
+
+sef_multi ∷ (Printable (Item α), IsList α) ⇒
+            𝕊 → Getting α Entry α → PCRE → ShowableEntryFilter
+sef_multi name f re =
+  ShowableEntryFilter ([fmt|%s PCRE: %s|] name (reSource re))
+                      (\ e → or ((matched ∘ (?=~re) ∘ toText) ⊳
+                                  toList (e ⊣ f)))
 
 ----------------------------------------
 
 sef_actress_pcre ∷ PCRE → ShowableEntryFilter
-sef_actress_pcre re   =
-  ShowableEntryFilter ([fmt|actress PCRE: %s|] (reSource re))
-                      (\ e → or ((matched ∘ (?=~re) ∘ toText) ⊳
-                                  toList (e ⊣ actresses)))
+sef_actress_pcre = sef_multi "actress" actresses
+
+----------------------------------------
+
+sef_descn_pcre ∷ PCRE → ShowableEntryFilter
+sef_descn_pcre = sef_simple "description" description
 
 ----------------------------------------
 
@@ -244,6 +248,25 @@ sef_epname_pcre re   =
 
 ----------------------------------------
 
+sef_medium_pcre ∷ PCRE → ShowableEntryFilter
+sef_medium_pcre re   =
+  ShowableEntryFilter ([fmt|medium PCRE: %s|] (reSource re))
+                      (\ e → case e ⊣ medium of
+                          𝕹   → 𝕱
+                          𝕵 m → matched $ toText m ?=~ re)
+
+----------------------------------------
+
+sef_tag_pcre ∷ PCRE → ShowableEntryFilter
+sef_tag_pcre = sef_multi "tag" tags
+
+----------------------------------------
+
+sef_title_pcre ∷ PCRE → ShowableEntryFilter
+sef_title_pcre = sef_simple "title" title
+
+----------------------------------------
+
 data ParseType = ParseEPID | ParseRE
 
 parseSpecs ∷ (CharParsing η, MonadFail η) ⇒
@@ -253,10 +276,13 @@ parseSpecs =
         (c, p ⊳ parseRE  , ParseRE  , c `T.cons` "{..}", t ⊕ " PCRE")
       parse_epid c p t =
         (c, p ⊳ parseEPID, ParseEPID, c `T.cons` "(..)", t ⊕ " (m.n..)")
-  in  [ parse_epid 'p' sef_epid_match "filter Episode ID (m.n..)"
-      , parse_re 't' sef_title_pcre "filter Title"
-      , parse_re 'a' sef_actress_pcre "filter Actress"
-      , parse_re 'e' sef_epname_pcre "filter Episode Name"
+  in  [ parse_re   'a' sef_actress_pcre "filter on actress"
+      , parse_re   'd' sef_descn_pcre   "filter on description"
+      , parse_re   'e' sef_epname_pcre  "filter on episode name"
+      , parse_re   'g' sef_tag_pcre     "filter on tag"
+      , parse_re   'm' sef_medium_pcre  "filter on medium"
+      , parse_epid 'p' sef_epid_match   "filter Episode ID (m.n..)"
+      , parse_re   't' sef_title_pcre   "filter on title"
       ]
 
 parseSpecDescs ∷ [(Doc α,Doc α)]

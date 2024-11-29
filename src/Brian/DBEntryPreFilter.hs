@@ -112,8 +112,8 @@ parseSpecs = let braced            = T.pack ⊳ boundedDoubledChars '{' '}'
                   , texts 'd' DBEntryDescFilter "filter on description"
                   , texts 'e' DBEntryEpNameFilter "filter on episode name"
                   , texts 'g' DBEntryTagFilter "filter on tag"
-                  , texts 'i' DBEntryEpIDFilter "filter on Episode ID"
                   , texts 'm' DBEntryMediumFilter "filter on medium"
+                  , texts 'p' DBEntryEpIDFilter "filter on Episode ID"
                   , texts 't' DBEntryTitleFilter "filter on title"
                   , [ nat 'y' (DBEntryEntryDateFilter ∘ read ∘ T.unpack)
                           "only show entries from later than n days ago" ]
@@ -121,7 +121,6 @@ parseSpecs = let braced            = T.pack ⊳ boundedDoubledChars '{' '}'
 
 parseSpecDescs ∷ [(Doc α,Doc α)]
 parseSpecDescs =
---  [ (pretty x) ⊕ (indent 4 $ pretty t) | (_,_,_,x,t) ← parseSpecs @Parser]
   [ (pretty x, indent 4 $ pretty t) | (_,_,_,x,t) ← parseSpecs @Parser]
 
 
