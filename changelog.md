@@ -1,3 +1,6 @@
+0.0.3.0 2024-12-03
+==================
+- lots of betterment, general-purpose cmdline predicates, DB pre-filters, +more
 - better Episode Name parsing, +tests
 - split out EntryTests.hs, EntryData.hs
 

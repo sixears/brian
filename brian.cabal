@@ -7,7 +7,7 @@ name:                brian
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.0.2.1
+version:             0.0.3.0
 
 -- A short (one-line) description of the package.
 synopsis:            a life with Brian
@@ -51,6 +51,7 @@ library
   other-modules:       Brian.Actress
                      , Brian.BTag
                      , Brian.Day
+                     , Brian.DBEntryPreFilter
                      , Brian.Description
                      , Brian.Entry
                      , Brian.EntryData
@@ -62,6 +63,7 @@ library
                      , Brian.Medium
                      , Brian.NumberParsing
                      , Brian.Options
+                     , Brian.OptParser
                      , Brian.Parsers
                      , Brian.PredicateFilter
                      , Brian.QueryOpts
@@ -71,6 +73,7 @@ library
                      , Brian.TagSoup
                      , Brian.Title
                      , Brian.ToSQLData
+                     , Brian.TrifectaPlus
 
   default-extensions: DeriveAnyClass
                     , DeriveGeneric
