@@ -111,7 +111,7 @@ openURL x t = let content_type = "application/x-www-form-urlencoded"
 brian ∷ (MonadIO μ, MonadLog (Log ω) μ, Default ω, HasIOClass ω, HasDoMock ω) ⇒
         μ String
 brian = do
-  s ← liftIO $ openURL "http://brianspage.com/query.php" (𝕵 "description=gag")
+  s ← liftIO $ openURL "http://brianspage.com/query.php" (𝕵 "description=e")
   logio Debug ([fmtT|read %d bytes|] (length s)) NoMock
   if length s < 200
   then logio Debug ([fmtT|read '%s'|] s) NoMock
@@ -152,7 +152,7 @@ maybeDumpEntry c q mck (Only eid) = do
     𝕹   → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
     𝕵 ē →
       let pre_filt = (q ⊣ gfilt ≡ NoGFilt) ∨ gFilt ē
-      in  when (pre_filt ∧ matchFilt (q ⊣ entryFilter) ē) $
+      in  when (pre_filt ∧ matchFilt (entryFilter q) ē) $
                say ([fmtT|%T\n\n----|] ē)
 
 --------------------

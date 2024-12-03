@@ -1,9 +1,15 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module Brian.EntryFilter
   ( EntryFilter
+  , actressFilter
+  , conj
+  , descFilter
+  , disj
   , gFilt
   , matchFilt
+  , null
   , tests
+  , titleFilter
   ) where
 
 import Base1T hiding ( toList )
@@ -88,7 +94,6 @@ import Brian.EntryData       qualified as EntryData
 import Brian.PredicateFilter qualified as PredicateFilter
 
 import Brian.BTag            ( unBTags )
-import Brian.Description     ( Description )
 import Brian.Entry           ( Entry, actresses, description, episode, medium,
                                tags, title )
 import Brian.Episode         ( EpisodeID(unEpisodeID), epID, epName )
@@ -116,18 +121,47 @@ matchEpID (EpIDFilter fs) (unEpisodeID → ds) =
 
 ------------------------------------------------------------
 
+{- Word pair filter, case-insensitive, with inhibitions.
+
+   Given a pair (as,b); pass (return 𝕿) iff b is present in the text
+   (non-case-sensitive; as a word infix NOT just prefix), and not preceded by
+   any of the words in a (again, non-case-sensitive).
+
+   Words are split on any non-alpha character.
+
+   If b is present in the first word, then return 𝕿.
+-}
+wordPairIFiltI ∷ ([𝕋],𝕋) → 𝕋 → 𝔹
+wordPairIFiltI (as,b) =
+  let words ∷ 𝕋 → [𝕋] = T.split (ﬧ . isAlpha)
+      paired_words ∷ 𝕋 → [(𝕋,𝕋)]
+                   = -- we prefix the list with a "" to ensure that the first
+                     -- word is considered (else it gets dropped by the zip, or
+                     -- more accurately, considered only as a prefix for the
+                     -- second word)
+                     (\ xs → zip xs (tailSafe xs)) ∘ ("":) ∘ words
+      f ∷ (𝕋,𝕋) → 𝔹 = let contains x = T.toLower b `T.isInfixOf` (T.toLower x)
+                          as' = T.toLower ⊳ as
+                      in  \ (x,y) → contains y ∧ (T.toLower x) ∉ as'
+  in  any f ∘ paired_words
+
+wordPairIFiltISEF ∷ ([𝕋],𝕋) → ShowableEntryFilter
+wordPairIFiltISEF (as,b) =
+  let f = wordPairIFiltI (as,b)
+  in  ShowableEntryFilter ([fmt|WordPairIFiltI«%L»%t|] as b)
+                          (f ∘ toText ∘ view description)
+
+gagFilter ∷ EntryFilter
+gagFilter = EFSome ∘ EF_Pred $ wordPairIFiltISEF (["no","not"],"gag")
+
+tagGagFilter ∷ EntryFilter
+tagGagFilter = tagFilter [pcre|^gagtype_(?!hand)|] -- negative lookahead
+
 gFilt ∷ Entry → 𝔹
 gFilt e =
-  let words ∷ 𝕋 → [𝕋] = T.split (ﬧ . isAlpha)
-      paired_words ∷ 𝕋 → [(𝕋,𝕋)] = (\ xs → zip xs (tailSafe xs)) ∘ words
-      descn_filter ∷ Description → 𝔹 =
-        let f ∷ (𝕋,𝕋) → 𝔹
-              = \ (a,b) → "gag" `T.isInfixOf` (T.toLower b)
-                        ∧ (T.toLower a) ∉ ["no", "not"]
-        in  any f ∘ paired_words ∘ toText
-      tag_filter = [pcre|^gagtype_(?!hand)|]    -- negative lookahead
+  let tag_filter = [pcre|^gagtype_(?!hand)|]    -- negative lookahead
       etags = toText ⩺ unBTags $ e ⊣ tags
-  in  or [ descn_filter (e ⊣ description)
+  in  or [ wordPairIFiltI (["no","not"],"gag")  (toText $ e ⊣ description)
          , etags ≡ [] ∨ any (\ t → matched $ t ?=~ tag_filter) etags
          ]
 
@@ -264,6 +298,26 @@ sef_tag_pcre = sef_multi "tag" tags
 
 sef_title_pcre ∷ PCRE → ShowableEntryFilter
 sef_title_pcre = sef_simple "title" title
+
+----------------------------------------
+
+titleFilter ∷ PCRE → EntryFilter
+titleFilter t = EFSome $ EF_Pred (sef_title_pcre t)
+
+----------------------------------------
+
+actressFilter ∷ PCRE → EntryFilter
+actressFilter t = EFSome $ EF_Pred (sef_actress_pcre t)
+
+----------------------------------------
+
+descFilter ∷ PCRE → EntryFilter
+descFilter t = EFSome $ EF_Pred (sef_descn_pcre t)
+
+----------------------------------------
+
+tagFilter ∷ PCRE → EntryFilter
+tagFilter t = EFSome $ EF_Pred (sef_tag_pcre t)
 
 ----------------------------------------
 

@@ -6,6 +6,7 @@ module Brian.DBEntryPreFilter
   , conj
   , dateFilter
   , descFilter
+  , epidFilter
   , gFilt
   , null
   , parseSpecDescs
@@ -226,6 +227,13 @@ titleFilter = filter ∘ DBEntryTitleFilter ∘ mglob
 
 actressFilter ∷ 𝕋 → DBEntryPreFilter
 actressFilter = filter ∘ DBEntryActressFilter ∘ mglob
+
+----------------------------------------
+
+epidFilter ∷ 𝕋 → DBEntryPreFilter
+epidFilter =
+  let pglob t = if "%" `T.isInfixOf` t then t else t ⊕ "%"
+  in  filter ∘ DBEntryEpIDFilter ∘ pglob
 
 ----------------------------------------
 
