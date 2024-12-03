@@ -93,7 +93,6 @@ import TrifectaPlus ( testParse )
 import Brian.EntryData       qualified as EntryData
 import Brian.PredicateFilter qualified as PredicateFilter
 
-import Brian.BTag            ( unBTags )
 import Brian.Entry           ( Entry, actresses, description, episode, medium,
                                tags, title )
 import Brian.Episode         ( EpisodeID(unEpisodeID), epID, epName )
@@ -157,13 +156,8 @@ gagFilter = EFSome ∘ EF_Pred $ wordPairIFiltISEF (["no","not"],"gag")
 tagGagFilter ∷ EntryFilter
 tagGagFilter = tagFilter [pcre|^gagtype_(?!hand)|] -- negative lookahead
 
-gFilt ∷ Entry → 𝔹
-gFilt e =
-  let tag_filter = [pcre|^gagtype_(?!hand)|]    -- negative lookahead
-      etags = toText ⩺ unBTags $ e ⊣ tags
-  in  or [ wordPairIFiltI (["no","not"],"gag")  (toText $ e ⊣ description)
-         , etags ≡ [] ∨ any (\ t → matched $ t ?=~ tag_filter) etags
-         ]
+gFilt ∷ EntryFilter
+gFilt = disj gagFilter tagGagFilter
 
 ------------------------------------------------------------
 

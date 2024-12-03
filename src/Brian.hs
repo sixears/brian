@@ -88,7 +88,7 @@ import Brian.Day              ( Day(Day) )
 import Brian.DBEntryPreFilter ( conj, dateFilter, null, whereClause )
 import Brian.Entry            ( EntryTable, insertEntry, parseEntries,
                                 readEntry )
-import Brian.EntryFilter      ( gFilt, matchFilt )
+import Brian.EntryFilter      ( matchFilt )
 import Brian.ID               ( ID(ID) )
 import Brian.Options          ( Mode(ModeAdd, ModeCreate, ModeQuery, ModeReCreate),
                                 Options, dbFile, mode )
@@ -151,8 +151,10 @@ maybeDumpEntry c q mck (Only eid) = do
   case e of
     𝕹   → throwSQLMiscError $ [fmtT|no entry found for %d|] eid
     𝕵 ē →
-      let pre_filt = (q ⊣ gfilt ≡ NoGFilt) ∨ gFilt ē
-      in  when (pre_filt ∧ matchFilt (entryFilter q) ē) $
+      let preFilt = if q ⊣ gfilt ≡ NoGFilt
+                    then EntryFilter.null
+                    else EntryFilter.gFilt
+      in  when (matchFilt (EntryFilter.conj (entryFilter q) preFilt) ē) $
                say ([fmtT|%T\n\n----|] ē)
 
 --------------------
